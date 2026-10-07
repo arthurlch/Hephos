@@ -1,0 +1,69 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/rivet",
+    "crates/rivet-core",
+    "crates/rivet-db",
+    "crates/rivet-agent",
+    "crates/rivet-mcp",
+    "examples/rest",
+    "examples/auth",
+    "examples/database",
+    "examples/websocket",
+    "examples/streaming",
+    "examples/agent",
+    "examples/tools",
+    "examples/workflow",
+    "examples/mcp",
+]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/arthurlch/rivet"
+
+# One pinned version per dependency, declared once, inherited everywhere.
+# Adding a dependency here is a deliberate, reviewed act (see CONVENTIONS.md).
+[workspace.dependencies]
+rivet = { path = "crates/rivet" }
+rivet-core = { path = "crates/rivet-core" }
+rivet-db = { path = "crates/rivet-db" }
+rivet-agent = { path = "crates/rivet-agent" }
+rivet-mcp = { path = "crates/rivet-mcp" }
+
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync", "time"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["trace", "timeout", "limit"] }
+axum = { version = "0.8", features = ["ws", "macros"] }
+hyper = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+thiserror = "2"
+anyhow = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+time = { version = "0.3", features = ["serde"] }
+futures = "0.3"
+
+# database
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "time", "macros", "migrate"] }
+
+# auth
+jsonwebtoken = "9"
+argon2 = "0.5"
+
+# agent / tools
+schemars = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+async-stream = "0.3"
+
+# mcp
+rmcp = { version = "0.9", features = ["server", "transport-io", "transport-streamable-http-server"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+panic = "abort"

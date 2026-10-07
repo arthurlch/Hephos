@@ -1,0 +1,16 @@
+[package]
+name = "example-auth"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+rivet = { workspace = true, features = ["db"] }
+tokio = { workspace = true }
+serde = { workspace = true }
+sqlx = { workspace = true }
+uuid = { workspace = true }
+time = { workspace = true }
+jsonwebtoken = { workspace = true }
+argon2 = { workspace = true }
