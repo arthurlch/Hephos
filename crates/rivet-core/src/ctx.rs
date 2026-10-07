@@ -146,3 +146,39 @@ where
 #[derive(Clone, Copy)]
 #[allow(dead_code)]
 pub(crate) struct RequestId(pub Uuid);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn user(roles: &[&str]) -> Identity {
+        Identity::User(Principal {
+            id: Uuid::nil(),
+            roles: roles.iter().map(|r| r.to_string()).collect(),
+        })
+    }
+
+    #[test]
+    fn anonymous_context_is_unauthorized() {
+        let ctx = Ctx::detached(());
+        assert!(matches!(ctx.require_user(), Err(Error::Unauthorized)));
+        assert!(matches!(
+            ctx.require_role("admin"),
+            Err(Error::Unauthorized)
+        ));
+    }
+
+    #[test]
+    fn require_role_distinguishes_401_from_403() {
+        let ctx = Ctx::detached(()).with_identity(user(&["user"]));
+        assert!(ctx.require_user().is_ok());
+        assert!(matches!(ctx.require_role("admin"), Err(Error::Forbidden)));
+        assert!(ctx.require_role("user").is_ok());
+    }
+
+    #[test]
+    fn detached_token_is_not_cancelled() {
+        let ctx = Ctx::detached(());
+        assert!(!ctx.cancel_token().is_cancelled());
+    }
+}

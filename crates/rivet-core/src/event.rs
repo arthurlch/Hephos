@@ -50,3 +50,28 @@ impl<E: Event> Events<E> {
         self.tx.subscribe()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    enum TestEvent {
+        Ping(u32),
+    }
+    impl Event for TestEvent {}
+
+    #[tokio::test]
+    async fn subscriber_receives_emitted_event() {
+        let events = Events::new(8);
+        let mut rx = events.subscribe();
+        events.emit(TestEvent::Ping(42));
+        assert_eq!(rx.recv().await.unwrap(), TestEvent::Ping(42));
+    }
+
+    #[test]
+    fn emit_without_subscribers_does_not_panic() {
+        let events: Events<TestEvent> = Events::new(8);
+        events.emit(TestEvent::Ping(1)); // dropped silently, must not panic
+    }
+}

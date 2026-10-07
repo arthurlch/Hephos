@@ -89,6 +89,11 @@ jobs:
       - name: Install psql client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
 
+      - name: Test rivet-db against a live database
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+        run: cargo test --locked -p rivet-db -- --include-ignored
+
       - name: Prepare example-database schema
         run: |
           createdb rivet_db

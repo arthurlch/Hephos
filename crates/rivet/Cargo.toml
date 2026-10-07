@@ -21,3 +21,7 @@ db = ["dep:rivet-db"]
 agent = ["dep:rivet-agent"]
 mcp = ["dep:rivet-mcp", "agent"]
 full = ["db", "agent", "mcp"]
+
+[dev-dependencies]
+tokio = { workspace = true }
+serde_json = { workspace = true }

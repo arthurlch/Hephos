@@ -80,3 +80,45 @@ impl RegisteredMcpTool {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rivet_agent::Tool;
+    use rivet_core::Result;
+    use schemars::JsonSchema;
+    use serde::Deserialize;
+
+    #[derive(Deserialize, JsonSchema)]
+    struct Input {
+        #[allow(dead_code)]
+        query: String,
+    }
+
+    struct Search;
+
+    impl Tool for Search {
+        type Input = Input;
+        type Output = u32;
+        const NAME: &'static str = "search";
+        const DESCRIPTION: &'static str = "search things";
+        async fn call(&self, _input: Input) -> Result<u32> {
+            Ok(0)
+        }
+    }
+
+    // The "one definition, two consumers" invariant: what MCP exposes for a tool
+    // must be exactly what the agent layer derives for it.
+    #[test]
+    fn registered_mcp_tool_matches_agent_schema() {
+        let server = McpServer::new().tool(Search);
+        assert_eq!(server.tools.len(), 1);
+
+        let registered = &server.tools[0];
+        let agent_schema = rivet_agent::tool_schema::<Search>();
+        assert_eq!(registered.name, agent_schema.name);
+        assert_eq!(registered.description, agent_schema.description);
+        assert_eq!(registered.input_schema, agent_schema.input_schema);
+        assert!(registered.input_schema.get("properties").is_some());
+    }
+}

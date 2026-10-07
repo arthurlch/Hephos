@@ -12,3 +12,7 @@ rivet-core = { workspace = true }
 sqlx = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+sqlx = { workspace = true }

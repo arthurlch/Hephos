@@ -121,3 +121,51 @@ impl IntoResponse for Error {
         (self.status(), axum::Json(body)).into_response()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::StatusCode;
+
+    #[test]
+    fn status_mapping_is_exhaustive_and_correct() {
+        assert_eq!(Error::not_found("user").status(), StatusCode::NOT_FOUND);
+        assert_eq!(Error::invalid("x").status(), StatusCode::BAD_REQUEST);
+        assert_eq!(Error::Unauthorized.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(Error::Forbidden.status(), StatusCode::FORBIDDEN);
+        assert_eq!(Error::conflict("x").status(), StatusCode::CONFLICT);
+        assert_eq!(
+            Error::internal("boom").status(),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+    }
+
+    #[test]
+    fn kind_strings_are_stable() {
+        assert_eq!(Error::not_found("u").kind(), "not_found");
+        assert_eq!(Error::invalid("i").kind(), "invalid");
+        assert_eq!(Error::Unauthorized.kind(), "unauthorized");
+        assert_eq!(Error::Forbidden.kind(), "forbidden");
+        assert_eq!(Error::conflict("c").kind(), "conflict");
+        assert_eq!(Error::internal("x").kind(), "internal");
+    }
+
+    #[test]
+    fn not_found_message_reads_cleanly_without_repeating_kind() {
+        assert_eq!(Error::not_found("user").message(), "user not found");
+        assert_eq!(Error::invalid("email required").message(), "email required");
+    }
+
+    #[test]
+    fn internal_message_is_opaque() {
+        // The cause must never reach the client-facing message.
+        let err = Error::internal("secret db dsn leaked here");
+        assert_eq!(err.message(), "internal error");
+    }
+
+    #[test]
+    fn anyhow_converts_to_internal() {
+        let err: Error = anyhow::anyhow!("underlying").into();
+        assert!(matches!(err, Error::Internal(_)));
+    }
+}

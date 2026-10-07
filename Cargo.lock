@@ -1627,6 +1627,8 @@ dependencies = [
  "rivet-core",
  "rivet-db",
  "rivet-mcp",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -1641,6 +1643,7 @@ dependencies = [
  "schemars 0.8.22",
  "serde",
  "serde_json",
+ "tokio",
  "tracing",
 ]
 
@@ -1669,6 +1672,7 @@ dependencies = [
  "anyhow",
  "rivet-core",
  "sqlx",
+ "tokio",
  "tracing",
 ]
 
@@ -1680,6 +1684,8 @@ dependencies = [
  "rivet-agent",
  "rivet-core",
  "rmcp",
+ "schemars 0.8.22",
+ "serde",
  "serde_json",
  "tracing",
 ]

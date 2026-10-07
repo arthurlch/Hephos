@@ -133,7 +133,11 @@ where
                 }
             },
         );
-        self.inner = self.inner.layer(middleware);
+        // `route_layer`, not `layer`: the auth check runs only for requests that
+        // match a route in this group. An unmatched path stays a `404` instead of
+        // being turned into a `401` by a fallback the middleware would otherwise
+        // wrap once routers are merged.
+        self.inner = self.inner.route_layer(middleware);
         self
     }
 
@@ -153,5 +157,28 @@ where
 {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn ok() -> &'static str {
+        "ok"
+    }
+
+    #[test]
+    fn builds_routes_without_panic() {
+        let _ = Router::<()>::new()
+            .get("/a", ok)
+            .post("/b", ok)
+            .merge(Router::<()>::new().get("/c", ok));
+    }
+
+    #[test]
+    #[should_panic(expected = "merge")]
+    fn nesting_at_root_panics_with_guidance() {
+        let _ = Router::<()>::new().nest("/", Router::<()>::new());
     }
 }

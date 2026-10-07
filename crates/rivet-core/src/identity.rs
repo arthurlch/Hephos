@@ -28,3 +28,23 @@ impl Principal {
         self.roles.iter().any(|r| r == role)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_identity_is_anonymous() {
+        assert!(matches!(Identity::default(), Identity::Anonymous));
+    }
+
+    #[test]
+    fn has_role_checks_membership() {
+        let p = Principal {
+            id: Uuid::nil(),
+            roles: vec!["admin".into(), "user".into()],
+        };
+        assert!(p.has_role("admin"));
+        assert!(!p.has_role("owner"));
+    }
+}

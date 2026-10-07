@@ -27,17 +27,27 @@ pub enum LogFormat {
 
 impl Config {
     pub fn from_env() -> Result<Self> {
-        let addr = match std::env::var("RIVET_ADDR") {
-            Ok(value) => value.parse().map_err(|_| {
+        Self::parse(
+            std::env::var("RIVET_ADDR").ok().as_deref(),
+            std::env::var("RIVET_LOG").ok().as_deref(),
+        )
+    }
+
+    /// Pure parsing of the two inputs, split from env reading so it is testable
+    /// without mutating process environment (which is `unsafe` on edition 2024 and
+    /// forbidden crate-wide).
+    fn parse(addr: Option<&str>, log: Option<&str>) -> Result<Self> {
+        let addr = match addr {
+            Some(value) => value.parse().map_err(|_| {
                 Error::invalid(format!("RIVET_ADDR is not a socket address: {value}"))
             })?,
-            Err(_) => SocketAddr::from(([0, 0, 0, 0], 8080)),
+            None => SocketAddr::from(([0, 0, 0, 0], 8080)),
         };
 
-        let log = match std::env::var("RIVET_LOG").as_deref() {
-            Ok("json") => LogFormat::Json,
-            Ok("pretty") | Err(_) => LogFormat::Pretty,
-            Ok(other) => {
+        let log = match log {
+            Some("json") => LogFormat::Json,
+            Some("pretty") | None => LogFormat::Pretty,
+            Some(other) => {
                 return Err(Error::invalid(format!(
                     "RIVET_LOG must be pretty|json: {other}"
                 )));
@@ -45,5 +55,36 @@ impl Config {
         };
 
         Ok(Config { addr, log })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn defaults_when_unset() {
+        let config = Config::parse(None, None).unwrap();
+        assert_eq!(config.addr.port(), 8080);
+        assert_eq!(config.log, LogFormat::Pretty);
+    }
+
+    #[test]
+    fn parses_addr_and_json_log() {
+        let config = Config::parse(Some("127.0.0.1:9000"), Some("json")).unwrap();
+        assert_eq!(config.addr.port(), 9000);
+        assert_eq!(config.log, LogFormat::Json);
+    }
+
+    #[test]
+    fn rejects_bad_addr() {
+        let err = Config::parse(Some("not-an-addr"), None).unwrap_err();
+        assert!(matches!(err, Error::Invalid(_)));
+    }
+
+    #[test]
+    fn rejects_bad_log_format() {
+        let err = Config::parse(None, Some("verbose")).unwrap_err();
+        assert!(matches!(err, Error::Invalid(_)));
     }
 }

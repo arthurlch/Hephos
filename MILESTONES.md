@@ -21,6 +21,36 @@ and operate a real backend — REST + DB + auth + background work + agents — b
 copying one canonical pattern per task, and a human can run it at scale with
 confidence. Every milestone below is judged against that, not against feature count.
 
+## What Rivet adds above the ecosystem (and must keep adding)
+
+Rivet does not ship a new runtime, HTTP stack, or serialization format. It is a thin,
+coherent application layer **above** the best of the Rust ecosystem, and its value
+lives there. "Thin" is not "small value" — the layer is the product: the opinions,
+guard-rails, wiring, and tests that turn excellent primitives into a backend an agent
+gets right the first time and a human can operate.
+
+| Concern | Reused | What Rivet adds on top |
+| --- | --- | --- |
+| async runtime | Tokio | structured lifecycle: graceful drain; cancellation that reaches every handler, task, and agent; no detached, unowned work |
+| HTTP / routing | Hyper + Axum | one verb-first router, one handler shape, a typed `Ctx` extractor; nesting at `/` is a clear error, not a late panic |
+| middleware | Tower | one fixed, correct stack; ordering bugs designed out; auth via `route_layer` so a 404 stays a 404 |
+| serialization | Serde | `Json`/`Path`/`Query` that turn bad input into a clean `400` in the one error type — no rejection zoo |
+| database | SQLx (Postgres) | `Db`/`Tx`, a service-owned transaction boundary, executor-generic repos, rolled-back-tx test fixtures |
+| observability | tracing | one span tree from route → service → repo → agent → tool; OTLP logs/metrics (roadmap) |
+| agents / MCP | rmcp | one strongly-typed `Tool` (derived schema + validation + authz) reachable by an in-process agent **and** external MCP clients; every run bounded |
+| errors | thiserror / anyhow | **one** `Error` for every layer; variants map to status; internals logged in full but returned opaque — secure by default |
+| testing | — (pure Rivet) | `rivet::test::TestClient` drives the **real** router in-memory; a mandatory `routes_build` canary |
+
+**This is a roadmap commitment, not just a description.** The reason to choose Rivet
+over assembling Tokio + Axum + SQLx + rmcp yourself is the value in that right-hand
+column — so every milestone must *deepen* it, not merely add surface. A feature that
+adds capability without adding a canonical shape, a guard-rail, a test seam, or an
+operability win has not earned its place. Concretely, each version grows the column:
+`0.0.2` makes the lifecycle/middleware value real; `0.2.0` the observability and
+resilience value; `0.3`+ the CLI/codegen value (the biggest agent-productivity
+multiplier); `0.5`–`0.7` the agent value (cost, guardrails, durability, memory);
+`0.9`–`1.0` the performance, operability, and API-stability value.
+
 ## Invariants that hold at every version (never broken)
 
 These are the load-bearing walls. A change that violates one is wrong, regardless
@@ -93,9 +123,16 @@ from, not a working release.
   disconnect and on shutdown.
 - Graceful shutdown hardening (drain in-flight, bounded drain deadline).
 - Finalize `Config` (addr, log format, timeout, body limit) — minimal, env-driven.
+- **Reconcile the limits with long-lived responses:** the request timeout and body
+  limit are **per-route-overridable defaults**, and streaming/SSE/WebSocket routes are
+  exempt from the request timeout (they get an idle timeout instead). Without this the
+  stack would kill every stream and block every large upload — a trap, not a guard.
+- **Un-pin the toolchain.** The `Cargo.lock` pins (uuid/time/url/…) are an environment
+  artifact of the 1.85 sandbox, not a design choice; set and CI-gate a real MSRV and
+  drop the pins.
 
-**Explicitly not yet.** Per-route middleware customization beyond `authenticated`;
-config files (env only).
+**Explicitly not yet.** Per-route middleware customization beyond `authenticated` and
+the timeout/body overrides above; config files (env only).
 
 **Acceptance.**
 - `TestClient` tests prove: a response carries a request id; a slow handler is cut
@@ -138,7 +175,11 @@ no residue.
 **Ship.**
 - Token lifecycle decision and implementation: short-lived access tokens + a
   documented refresh/revocation strategy (opinionated: stateless access + a
-  revocation list table for logout/compromise).
+  revocation list table for logout/compromise), with support for **signing-key
+  rotation** (multiple valid keys during a rotation window).
+- **Machine-to-machine auth:** Postgres-backed API keys (hashed, scoped, revocable)
+  resolved to the same `Identity`, alongside user JWTs — service callers are a
+  first-class production need, not an afterthought.
 - `argon2` parameters tuned and documented; password policy hooks.
 - Role/permission checks consolidated (`require_role`, resource-ownership pattern).
 - Security-headers middleware (HSTS, nosniff, frame-deny) and an opinionated,
@@ -182,14 +223,19 @@ and handles the two canonical simulations from `ARCHITECTURE.md §24` end-to-end
 - OpenTelemetry integration via `tracing-opentelemetry` + `opentelemetry-appender-tracing`:
   **logs and metrics on by default** (both are stable upstream), **traces behind a
   flag** (upstream traces are still beta — we adopt, but gate). OTLP export configurable.
-- RED metrics (request rate, errors, duration) emitted per route.
+- RED metrics (request rate, errors, duration), labeled by **route template**
+  (`/users/{id}`), never raw path — unbounded label cardinality would take down the
+  metrics backend, so this is a correctness requirement, not a nicety.
 - `/health` (liveness) and `/ready` (readiness incl. DB check) endpoints, canonical.
 - Panic isolation: a handler panic becomes a logged `500`, never a crash.
 - Rate limiting via `tower-governor` (GCRA), one canonical configuration surface.
 - Load-shedding / concurrency-limit (Tower) with a documented backpressure story.
 
 **Explicitly not yet.** Custom metrics DSL; distributed tracing propagation across
-services beyond the standard OTLP context.
+services beyond the standard OTLP context. **Distributed (cross-instance) rate
+limiting** — `tower-governor` is per-instance, so at N replicas the effective limit is
+N× the configured value; a shared-store limiter is a later, additive seam (documented
+so operators aren't surprised).
 
 **Acceptance.** Metrics and logs export to an OTLP collector in a CI integration
 test; a rate-limited route returns `429` under load; a panicking handler returns
@@ -347,6 +393,14 @@ appears in any log in an integration test.
 **Ship.**
 - Benchmarks (`criterion` micro + a load harness) with published latency/throughput
   and p99 targets; regression gate in CI.
+- **Overhead vs. raw Axum + SQLx**, measured, published, and gated (target: negligible,
+  single-digit-% overhead). This is the number that answers "why not just use Axum?" —
+  the layer must prove it is nearly free.
+- A **reference application** (`examples/reference-app`) combining REST + DB + auth +
+  jobs + an agent + MCP — the production proof and the richest copy-target, and what
+  the `1.0` acceptance test is run against.
+- Validate the **everything-on-Postgres** bet under load; document the thresholds at
+  which a concern (jobs, cache, vector search) should move off the primary DB.
 - Pool/connection tuning; allocation and copy audit on the hot path.
 - Multi-instance readiness: stateless by construction; documented external
   session/cache seam where state is unavoidable.
@@ -488,9 +542,10 @@ These never "complete"; they deepen each release. Each has a standing bar.
   allocation/clone audit on hot paths each release; a benchmark regression gate at
   `0.9`.
 - **API conventions.** One canonical shape for each of: pagination, filtering,
-  sorting, `Problem Details` (RFC 9457) error bodies, idempotency keys, conditional
-  requests (ETag/If-Match), content negotiation + compression (gzip/brotli), and URL
-  API versioning. Landed across `0.1`–`0.2`, frozen at `0.9`.
+  sorting, the error body (keep `{error:{kind,message}}` or adopt RFC 9457 — decided at
+  `0.1.0`, see Risks), idempotency keys, conditional requests (ETag/If-Match), content
+  negotiation + compression (gzip/brotli), and URL API versioning. Landed across
+  `0.1`–`0.2`, frozen at `0.9`.
 - **Resilience.** Outbound calls (DB, HTTP, providers) get timeout + bounded
   retry/backoff + circuit-breaker + bulkhead as canonical Tower middleware (`0.2`);
   idempotency and graceful degradation patterns documented.
@@ -505,7 +560,7 @@ its target. Where the honest answer is "an operator/vendor concern," Rivet ships
 
 | Area | Rivet's opinionated provision | Target |
 | --- | --- | --- |
-| Error bodies | `Problem Details` (RFC 9457) shape over the one `Error` type | `0.1.0` |
+| Error bodies | `{error:{kind,message}}` today (shipped); whether to adopt RFC 9457 `application/problem+json` is an **open decision** — see Risks | decide `0.1.0` |
 | Pagination / filter / sort | one cursor-based convention + query extractors | `0.1.0` |
 | API versioning | URL-prefixed (`/v1`), documented deprecation of old versions | `0.1.0` |
 | Idempotency | `Idempotency-Key` on unsafe methods, Postgres-backed dedupe | `0.2.0` |
@@ -563,7 +618,7 @@ We do not chase every agent-framework feature; we provide the few that compose.
 **Correctness & API**
 - [ ] Public API frozen; `cargo-semver-checks` guards it in CI.
 - [ ] One canonical shape per artifact; no `// BOUNDARY:` remains in shipped crates.
-- [ ] RFC 9457 error bodies; pagination/filter/sort/versioning/idempotency conventions stable.
+- [ ] Error-body shape finalized (keep `{error:{kind,message}}` or adopt RFC 9457 — decided at `0.1.0`); pagination/filter/sort/versioning/idempotency conventions stable.
 
 **Data**
 - [ ] Migrations up/down, CI-gated, zero-downtime guidance; pool + statement timeouts configurable.
@@ -619,6 +674,58 @@ We do not chase every agent-framework feature; we provide the few that compose.
 - **Governance.** A lightweight **RFC process** for any new canonical pattern (a new
   pattern is never added silently — invariant #6); ADRs committed; `CODEOWNERS`; a
   Code of Conduct; a maintainer/decision model; `SECURITY.md` + disclosure process.
+
+## Risks, trade-offs & open decisions
+
+A roadmap that doesn't own its risks isn't a plan. These are the strategic bets and
+the unsettled technical decisions — surfaced so they are chosen deliberately, and
+revisited, rather than discovered in production.
+
+### Strategic bets
+
+- **Everything-on-Postgres.** Jobs, the event outbox, workflows, idempotency,
+  rate-limit dedupe, token revocation, agent memory, and `pgvector` all ride one
+  Postgres. This is the "no new infrastructure" bet that keeps the system legible — and
+  it concentrates load and blast radius on a single node. *Mitigation:* `0.9` load-tests
+  Postgres as the backbone and documents the thresholds at which a concern should move
+  off the primary DB; the seams already exist. Revisit if the single-DB ceiling is hit.
+- **Agent-layer timing.** The agent value (`0.5`+) is the differentiator but lands
+  mid-roadmap. *Open decision:* ship a minimal agent MVP right after `0.2` to validate
+  the thesis and attract adoption, trading some REST/ops polish for an earlier proof of
+  the thing that makes Rivet distinctive?
+- **Ecosystem & provider churn.** Rivet rides Axum/Tower/SQLx/rmcp and vendor LLM APIs;
+  an upstream breaking change or a provider API shift is a maintenance tax. *Mitigation:*
+  the wrapper surface is deliberately small and version-pinned; providers sit behind the
+  two-method `Model` trait, so a vendor change is contained to one file.
+- **The meta-risk.** If agents get good enough to wield un-opinionated frameworks
+  directly, Rivet's edge narrows. *The bet:* regularity still cuts tokens, errors, and
+  review cost even for strong agents — and that advantage grows with codebase size, not
+  shrinks.
+
+### Technical decisions to settle before the API freeze
+
+- **Error body — keep or adopt RFC 9457?** Today it is `{"error":{"kind","message"}}`
+  (shipped, and documented in `CONVENTIONS`/`ARCHITECTURE`). RFC 9457
+  `application/problem+json` is the interoperable standard and can still carry our
+  `kind`. Adopting it is a **pre-0.1 breaking change** that must update the code and
+  both doctrine docs together. **Decide at `0.1.0`.** Until then, every "Problem
+  Details" mention in this file is aspirational, not the current contract.
+- **Timeout vs. streaming** (`0.0.2`): the global request timeout must exempt
+  streaming/SSE/WebSocket routes (idle timeout instead) or it kills every stream.
+- **Body limit vs. uploads** (`0.0.2`/`0.3`): the global body limit must be
+  per-route-overridable or it blocks file uploads.
+- **Rate limiting is per-instance** (`0.2`): `tower-governor` holds state in-process, so
+  at N replicas the effective limit is N×; distributed limiting is a deferred, additive
+  seam — documented, not silently wrong.
+- **Cross-instance real-time** (`0.3`+): WebSocket fan-out across instances is deferred;
+  single-instance or sticky-session only until a shared fan-out seam lands.
+
+### The adoption bar (why an engineer actually switches)
+
+- Overhead vs. raw Axum+SQLx is negligible **and published** (`0.9`).
+- A **reference application** proves the whole stack composes (`0.9`).
+- The **agent playbook** makes "an agent builds a production backend with no human
+  disambiguation" reproducible, not a slogan (`1.0`).
 
 ## Explicitly out of scope until after 1.0
 

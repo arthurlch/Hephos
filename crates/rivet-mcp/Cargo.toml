@@ -14,3 +14,8 @@ rmcp = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 anyhow = { workspace = true }
+
+[dev-dependencies]
+rivet-core = { workspace = true }
+serde = { workspace = true }
+schemars = { workspace = true }
