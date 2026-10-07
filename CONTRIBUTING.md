@@ -10,7 +10,7 @@ and verify by running — not just compiling.
   / preferred lists, and the validation commands. This is normative.
 - [`CONVENTIONS.md`](./CONVENTIONS.md) — the canonical shape of every artifact.
 - [`ARCHITECTURE.md`](./ARCHITECTURE.md) — why the system is shaped the way it is.
-- [`REVIEW.md`](./REVIEW.md) — build order and the invariants that must never break.
+- [`MILESTONES.md`](./MILESTONES.md) — the versioned roadmap to 1.0 and the invariants that must never break.
 
 ## The one rule
 

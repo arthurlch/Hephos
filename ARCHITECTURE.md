@@ -10,7 +10,7 @@ contradiction is a defect to be fixed, not a choice to be made.
 > description of what remains. The `examples/` directory is written against this
 > contract and defines the intended usage. Nothing here is a fake API — every
 > signature is one a correct implementation can satisfy, and the boundaries say
-> exactly where implementation work remains. See `REVIEW.md` for build order.
+> exactly where implementation work remains. See `MILESTONES.md` for build order.
 
 ---
 
@@ -284,7 +284,7 @@ use Axum 0.8 brace syntax (`/users/{id}`). This is the fully supported path toda
 RPC in Rivet is **not a second framework** — it is a convention over REST:
 `POST /rpc/{method}` with a `Json<Request>` body and a `Json<Response>` reply,
 handlers living in `api/` like any other. Rivet does not ship code generation or a
-schema language in v1; that is a deliberate deferral (see `REVIEW.md`). Choosing
+schema language in v1; that is a deliberate deferral (see `MILESTONES.md`). Choosing
 one HTTP-shaped RPC convention over a bespoke protocol keeps the surface an agent
 must learn to zero beyond REST.
 
@@ -318,7 +318,7 @@ A `Task` is a long-lived unit of work owned by `App`. It implements one method,
 drives a `tokio::time::interval` inside its loop. Rivet deliberately ships **no
 cron engine** — the interval-loop pattern covers the overwhelming majority of
 needs and is fully visible in the code. Durable, distributed scheduling is a
-future, additive concern, explicitly out of scope for v1 (see `REVIEW.md`).
+future, additive concern, explicitly out of scope for v1 (see `MILESTONES.md`).
 
 **Why no scheduler abstraction?** A scheduler is a stateful subsystem with its own
 failure modes. For an agent, a `select!` loop over `interval.tick()` and
@@ -418,7 +418,7 @@ Rivet v1 does **not** ship a durable workflow engine (no event-sourced replay, n
 distributed saga runtime). That is the correct deferral: durable execution is a
 large stateful subsystem, and most workflows are a bounded sequence of steps that
 a plain async function expresses more legibly than a DSL. The architecture marks
-durable execution as a future, additive layer (see `REVIEW.md`), reachable without
+durable execution as a future, additive layer (see `MILESTONES.md`), reachable without
 changing the `run(ctx, input)` shape.
 
 **Why functions, not a DSL?** An agent reads a plain async function and knows

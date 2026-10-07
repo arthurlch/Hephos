@@ -1,12 +1,15 @@
 version: 2
+# PRs opened here are auto-merged by .github/workflows/dependabot-auto-merge.yml
+# once CI passes; failing ones stay open for a human.
 updates:
   # Cargo dependencies are pinned once in [workspace.dependencies]; group the noise
-  # into a single weekly PR so review stays cheap.
+  # into a single weekly PR so review (and auto-merge) stays cheap.
   - package-ecosystem: cargo
     directory: "/"
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    labels: ["dependencies"]
     groups:
       cargo:
         patterns: ["*"]
@@ -15,6 +18,7 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+    labels: ["dependencies", "github-actions"]
     groups:
       actions:
         patterns: ["*"]

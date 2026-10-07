@@ -8,7 +8,7 @@ All notable changes to Rivet are recorded here. Format follows
 ### Status
 Pre-alpha scaffold. The doctrine (`CLAUDE.md`, `ARCHITECTURE.md`, `CONVENTIONS.md`),
 the public API contract (`crates/`), and the reference examples are in place. Core
-runtime subsystems remain marked `// BOUNDARY:` — see `REVIEW.md` for what to build
+runtime subsystems remain marked `// BOUNDARY:` — see `MILESTONES.md` for what to build
 first toward a functional `0.1.0`.
 
 ### Added

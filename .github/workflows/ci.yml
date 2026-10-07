@@ -14,35 +14,56 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # Offline crates: everything that builds without a database.
+  OFFLINE: --workspace --exclude example-database --exclude example-auth
 
 jobs:
-  # The verified baseline: everything that builds without a database. This mirrors
-  # `make ci` and the validation commands in CLAUDE.md §11. It is authoritative —
-  # a red check here blocks merge.
-  check:
-    name: fmt • clippy • test (offline)
+  lint:
+    name: fmt + clippy
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Install toolchain (pinned by rust-toolchain.toml)
         run: rustup show
       - uses: Swatinem/rust-cache@v2
-      - name: Format
-        run: cargo fmt --all --check
-      - name: Clippy
-        run: >-
-          cargo clippy --locked --all-targets --all-features
-          --workspace --exclude example-database --exclude example-auth
-          -- -D warnings
-      - name: Test
-        run: >-
-          cargo test --locked --all-features
-          --workspace --exclude example-database --exclude example-auth
+      - run: cargo fmt --all --check
+      - run: cargo clippy --locked --all-targets --all-features $OFFLINE -- -D warnings
 
-  # The database-backed examples. Their SQLx `query!` macros are verified against a
-  # live schema at compile time, so this job stands up Postgres, applies each
-  # example's migrations with psql, and builds + runs the (otherwise #[ignore]d)
-  # flow tests against it.
+  test:
+    name: test (offline)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --locked --all-features $OFFLINE
+
+  docs:
+    name: docs build
+    runs-on: ubuntu-latest
+    env:
+      RUSTDOCFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      - run: >-
+          cargo doc --locked --no-deps --all-features
+          -p rivet -p rivet-core -p rivet-db -p rivet-agent -p rivet-mcp
+
+  features:
+    name: feature matrix
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-hack
+      # Every combination of the meta crate's features must compile.
+      - run: cargo hack --locked --feature-powerset --no-dev-deps check -p rivet
+
   database:
     name: db examples (postgres)
     runs-on: ubuntu-latest
@@ -90,8 +111,6 @@ jobs:
           cargo clippy --locked -p example-auth --all-targets -- -D warnings
           cargo test --locked -p example-auth -- --include-ignored
 
-  # Dependency hygiene: advisories, license policy, and duplicate/wildcard bans.
-  # Advisory-only for 0.0.x (non-blocking) until the policy in deny.toml is tuned.
   deny:
     name: cargo-deny
     runs-on: ubuntu-latest

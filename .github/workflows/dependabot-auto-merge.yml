@@ -1,0 +1,57 @@
+name: Dependabot auto-merge
+
+# Auto-merge Dependabot PRs *only* when CI passes; otherwise leave them open for a
+# human. This enables GitHub's native auto-merge, which waits for required status
+# checks before merging — so a red CI simply never merges.
+#
+# REQUIRED repo settings for this to behave as intended (one-time):
+#   1. Settings → General → Pull Requests → enable "Allow auto-merge".
+#   2. Settings → Branches → branch protection on `main` → "Require status checks
+#      to pass before merging", selecting the CI jobs (lint, test, docs, features).
+#      Without required checks, auto-merge would merge immediately — the branch
+#      protection is what makes "merge only if CI passes" true.
+#   3. (Only if you also require approvals) Settings → Actions → General → enable
+#      "Allow GitHub Actions to create and approve pull requests" so the approve
+#      step below can satisfy the review requirement.
+
+on: pull_request
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    # Only act on Dependabot's own PRs.
+    if: ${{ github.actor == 'dependabot[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch update metadata
+        id: meta
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Optional safety valve — uncomment to keep major bumps for human review:
+      # - name: Hold major updates for a human
+      #   if: ${{ steps.meta.outputs.update-type == 'version-update:semver-major' }}
+      #   env:
+      #     GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #   run: |
+      #     gh pr comment "$PR_URL" --body "Major update — leaving for human review."
+      #     exit 0
+
+      # Satisfies a "require 1 approval" rule if you have one; harmless otherwise.
+      - name: Approve
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr review --approve "$PR_URL"
+
+      # Enables auto-merge: GitHub completes the merge once required checks are green.
+      # If CI fails, nothing merges and the PR stays open for a human.
+      - name: Enable auto-merge
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr merge --auto --squash "$PR_URL"
