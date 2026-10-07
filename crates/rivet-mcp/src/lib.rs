@@ -61,6 +61,9 @@ impl Default for McpServer {
     }
 }
 
+// BOUNDARY: these fields are consumed when registering the tool with rmcp's
+// `ServerHandler`; held here until that wiring lands (see `serve_stdio`).
+#[allow(dead_code)]
 struct RegisteredMcpTool {
     name: &'static str,
     description: &'static str,

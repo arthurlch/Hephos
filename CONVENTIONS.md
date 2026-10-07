@@ -139,11 +139,13 @@ pub async fn create(ctx: Ctx, Json(input): Json<CreateUser>) -> Result<Json<User
 }
 ```
 
-The top-level `api/mod.rs` composes resource routers with `nest`:
+The top-level `api/mod.rs` composes resource routers with `merge` (each resource
+router already declares full paths, so they join at the same level). `nest` is
+reserved for real sub-paths such as orders under `/users/{id}` — never `nest("/")`.
 
 ```rust
 pub fn routes() -> Router<crate::state::AppState> {
-    Router::new().nest("/", users::routes())
+    Router::new().merge(users::routes())
 }
 ```
 
@@ -431,7 +433,7 @@ pub async fn serve(db: rivet::db::Db) -> Result<()> {
 
 | Variant | Constructor | Status | Client sees |
 | --- | --- | --- | --- |
-| `NotFound(String)` | `Error::not_found(what)` | 404 | the message |
+| `NotFound(String)` | `Error::not_found(what)` | 404 | `"<what> not found"` |
 | `Invalid(String)` | `Error::invalid(msg)` | 400 | the message |
 | `Unauthorized` | `Error::Unauthorized` | 401 | `"unauthorized"` |
 | `Forbidden` | `Error::Forbidden` | 403 | `"forbidden"` |
@@ -480,14 +482,53 @@ Response body is always `{ "error": { "kind": "...", "message": "..." } }`.
 | Kind | Location | What |
 | --- | --- | --- |
 | Unit | `#[cfg(test)] mod tests` at file bottom | services, repos, tools |
-| Integration | `tests/<area>.rs` | HTTP surface end-to-end |
+| HTTP surface | `#[cfg(test)] mod tests;` → `src/tests.rs` | the real router, via `TestClient` |
 | DB | inside a rolled-back `Tx` or a disposable DB | repo/service with data |
 
-- Build contexts with `Ctx::detached(state)`.
-- Every endpoint: ≥1 success test and ≥1 failure test.
+A binary crate has no lib target, so HTTP-surface tests live in a
+`#[cfg(test)] mod tests;` module (`src/tests.rs`), not `tests/`. A library crate
+uses `tests/` as usual.
+
+### 5.1 The canonical HTTP-surface test
+
+Drive the real router with `rivet::test::TestClient` — same routes and middleware
+the app serves. Every app includes a `routes_build` canary.
+
+```rust
+use rivet::test::TestClient;
+use serde_json::{json, Value};
+
+use crate::{api, state::AppState};
+
+async fn client() -> TestClient {
+    TestClient::new(api::routes(), AppState::init().await.unwrap())
+}
+
+// The canary: route composition must not panic. Catches bad nest/merge.
+#[tokio::test]
+async fn routes_build() {
+    let _ = api::routes();
+}
+
+#[tokio::test]
+async fn create_empty_email_is_400() {
+    let res = client().await.post_json("/users", &json!({ "email": "" })).await;
+    assert_eq!(res.status(), 400);
+    assert_eq!(res.json::<Value>()["error"]["kind"], "invalid");
+}
+```
+
+Rules:
+- Every app has a `routes_build` test. Never optional — it is the one-line guard
+  against wiring bugs that `cargo check` cannot see.
+- Every endpoint: ≥1 success test and ≥1 failure test, driven through `TestClient`,
+  asserting status and `error.kind`.
+- Build service-level contexts with `Ctx::detached(state)`.
 - No network in tests; exercise `Model` via a test implementation.
-- Name tests `fn <method>_<condition>_<expected>()`:
-  `create_rejects_empty_email`, `get_missing_returns_not_found`.
+- Tests needing external infra (Postgres, wired migrations) are `#[ignore = "…"]`
+  with the reason, so `cargo test` stays green offline.
+- Name tests `fn <subject>_<condition>_<expected>()`:
+  `create_empty_email_is_400`, `get_missing_product_is_404`.
 
 ---
 

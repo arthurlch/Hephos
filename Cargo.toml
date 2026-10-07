@@ -32,7 +32,7 @@ rivet-db = { path = "crates/rivet-db" }
 rivet-agent = { path = "crates/rivet-agent" }
 rivet-mcp = { path = "crates/rivet-mcp" }
 
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync", "time"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync", "time", "net"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.6", features = ["trace", "timeout", "limit"] }

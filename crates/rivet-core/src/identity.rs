@@ -9,8 +9,9 @@ use uuid::Uuid;
 /// Rivet deliberately keeps the principal small — an id plus roles. Loading a
 /// full user record is a service concern, done by id when needed. This keeps the
 /// auth layer thin and uniform across every app.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum Identity {
+    #[default]
     Anonymous,
     User(Principal),
 }
@@ -25,11 +26,5 @@ pub struct Principal {
 impl Principal {
     pub fn has_role(&self, role: &str) -> bool {
         self.roles.iter().any(|r| r == role)
-    }
-}
-
-impl Default for Identity {
-    fn default() -> Self {
-        Identity::Anonymous
     }
 }

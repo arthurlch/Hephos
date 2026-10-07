@@ -138,6 +138,11 @@ where
     }
 }
 
-/// Request correlation id, inserted by the standard middleware stack.
+/// Request correlation id, read from request extensions here.
+///
+/// BOUNDARY: inserted by the standard middleware stack (see `app::standard_stack`).
+/// Until that stack is wired, no code constructs it and `Ctx` falls back to a
+/// freshly generated id — hence `allow(dead_code)` on the constructor path.
 #[derive(Clone, Copy)]
+#[allow(dead_code)]
 pub(crate) struct RequestId(pub Uuid);

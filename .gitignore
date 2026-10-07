@@ -1,0 +1,28 @@
+# Rust build output — never commit. This is the big one.
+/target
+**/target
+
+# Backup files from rustfmt and editors
+**/*.rs.bk
+*.orig
+
+# Secrets and local environment — must never reach the remote
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# SQLx offline cache is committed deliberately (see .sqlx below); local scratch is not
+/tmp-*
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Note: Cargo.lock IS committed. This workspace ships binaries (the examples) and
+# pins transitive versions for a reproducible build, so the lockfile is tracked.

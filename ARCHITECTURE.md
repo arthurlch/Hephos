@@ -535,16 +535,37 @@ small.
 
 ## 21. Testing architecture
 
-- **Unit tests** at the bottom of each file (`#[cfg(test)] mod tests`), testing
-  services and repos by building `Ctx::detached(state)` and calling methods.
-- **Integration tests** in `tests/`, driving the app through its HTTP surface.
-- **Database tests** run inside a transaction rolled back at the end, or against a
-  disposable database, so they are deterministic and leave no residue.
-- Tests never touch the network; providers are exercised behind the `Model` trait
-  with a test implementation.
+Testing is a **first-class framework capability**, not an afterthought — because a
+framework optimized for agents must make its correctness checkable the same
+uniform way everywhere, and because compilation alone proves nothing about wiring.
 
-The single error type and uniform handler shape make tests themselves regular: an
-agent writes the same success/failure pair for every endpoint.
+- **`rivet::test::TestClient`** is the canonical harness. It drives the real
+  [`Router`] — the same routes, extractors, and middleware the app serves — in
+  memory, without a socket. It is shipped as part of the framework so there is one
+  obvious way to test an app's HTTP surface, and so the test exercises the actual
+  wiring rather than a reconstruction of it.
+- **Two layers, both required.** *Unit tests* (`#[cfg(test)] mod tests` at a file's
+  bottom) check a service/repo/tool via `Ctx::detached(state)`. *HTTP-surface
+  tests* drive `TestClient` and assert status + `error.kind`. A unit test proves a
+  service works; only an HTTP-surface test proves the app is wired.
+- **The `routes_build` canary.** Every app has a one-line test that builds
+  `api::routes()` and asserts no panic. Route composition, `nest`/`merge` misuse,
+  and similar wiring faults are invisible to `cargo check` and only surface when the
+  router is constructed — this test is where they surface, in CI, not in production.
+- **Binary-crate placement.** An app is a binary with no lib target, so
+  HTTP-surface tests live in a `#[cfg(test)] mod tests;` module (`src/tests.rs`)
+  that can reach `crate::api::routes()`. Library crates use `tests/`.
+- **Determinism.** Database tests run in a rolled-back transaction or a disposable
+  database; tests never touch the network (providers are exercised behind the
+  `Model` trait); tests requiring external infrastructure are `#[ignore]`d with a
+  reason so the default suite stays green offline.
+
+Why this is in the architecture at all: an earlier revision passed `cargo check`,
+`cargo build`, and `cargo clippy` while shipping a startup panic (nesting a router
+at `"/"`). None of those commands runs a request. The response was structural — a
+framework-owned test client plus a mandatory `routes_build` canary — so the gap
+cannot silently reopen. The single error type and uniform handler shape then make
+the tests themselves regular: the same success/failure pair fits every endpoint.
 
 ---
 

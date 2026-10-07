@@ -31,7 +31,10 @@ impl UserService {
         }
 
         let mut tx = self.db.begin().await?;
-        if UserRepo::find_by_email(tx.exec(), &input.email).await?.is_some() {
+        if UserRepo::find_by_email(tx.exec(), &input.email)
+            .await?
+            .is_some()
+        {
             return Err(Error::conflict("email already registered"));
         }
         let user = UserRepo::create(tx.exec(), &input).await?;
@@ -48,7 +51,9 @@ mod tests {
     use crate::state::AppState;
 
     async fn state() -> AppState {
-        AppState::init().await.expect("test database (DATABASE_URL) must be available")
+        AppState::init()
+            .await
+            .expect("test database (DATABASE_URL) must be available")
     }
 
     #[tokio::test]

@@ -3,7 +3,6 @@ use std::time::Duration;
 use futures::{SinkExt, StreamExt};
 use rivet::prelude::*;
 use rivet::ws::{Message, Response, WebSocket, WebSocketUpgrade};
-use tokio::sync::mpsc;
 
 use crate::state::{AppState, Ctx};
 
@@ -18,36 +17,26 @@ pub async fn connect(ctx: Ctx, upgrade: WebSocketUpgrade) -> Response {
     upgrade.on_upgrade(move |socket| handle(ctx, socket))
 }
 
+/// One connection, one loop, no spawned tasks. The socket is split so reads and
+/// writes own separate halves; the loop selects over incoming frames, a heartbeat,
+/// and cancellation. Backpressure is the awaited `sink.send`: when the client
+/// cannot keep up, the send blocks the loop, which stops reading — flow control
+/// without an unbounded queue.
 async fn handle(ctx: Ctx, socket: WebSocket) {
     let (mut sink, mut stream) = socket.split();
-
-    // Outbound queue is BOUNDED: when the client cannot keep up, `outbound.send`
-    // awaits, which propagates backpressure to whatever produces messages.
-    let (outbound, mut rx) = mpsc::channel::<Message>(32);
-
-    // Writer drains the bounded queue to the socket. It is joined before this
-    // function returns (see the end) — owned, not detached.
-    let writer = tokio::spawn(async move {
-        while let Some(message) = rx.recv().await {
-            if sink.send(message).await.is_err() {
-                break;
-            }
-        }
-    });
-
     let mut heartbeat = tokio::time::interval(Duration::from_secs(15));
 
     loop {
         tokio::select! {
             _ = ctx.cancel_token().cancelled() => break,
             _ = heartbeat.tick() => {
-                if outbound.send(Message::Ping(Vec::new().into())).await.is_err() {
+                if sink.send(Message::Ping(Vec::new().into())).await.is_err() {
                     break;
                 }
             }
             incoming = stream.next() => match incoming {
                 Some(Ok(Message::Text(text))) => {
-                    if outbound.send(Message::Text(text)).await.is_err() {
+                    if sink.send(Message::Text(text)).await.is_err() {
                         break;
                     }
                 }
@@ -60,7 +49,4 @@ async fn handle(ctx: Ctx, socket: WebSocket) {
             }
         }
     }
-
-    drop(outbound);
-    let _ = writer.await;
 }

@@ -1,14 +1,10 @@
-use std::sync::Arc;
-
 use tokio::net::TcpListener;
 use tokio::signal;
 use tokio_util::sync::CancellationToken;
-use uuid::Uuid;
 
 use crate::config::{Config, LogFormat};
-use crate::ctx::{Ctx, RequestId};
+use crate::ctx::Ctx;
 use crate::error::{Error, Result};
-use crate::identity::Identity;
 use crate::router::Router;
 use crate::task::Task;
 
@@ -75,12 +71,11 @@ where
         // Background tasks share the app's shutdown token.
         let mut handles = Vec::new();
         for task in self.tasks {
-            let ctx = Ctx::detached(state.clone());
-            let token = shutdown.clone();
-            let ctx = ctx.with_cancel(token);
+            let ctx = Ctx::detached(state.clone()).with_cancel(shutdown.clone());
+            let name = task.name();
             handles.push(tokio::spawn(async move {
                 if let Err(error) = task.run_erased(ctx).await {
-                    tracing::error!(task = task.name(), error = %error, "task failed");
+                    tracing::error!(task = name, error = %error, "task failed");
                 }
             }));
         }
@@ -122,7 +117,7 @@ where
 /// BOUNDARY: shown as the intended composition. The concrete tower layers
 /// (request-id injection, tracing span, timeout, body limit, cancellation token
 /// propagation) are assembled here so application code never touches tower.
-fn standard_stack<S>(_shutdown: CancellationToken) -> tower::layer::util::Identity {
+fn standard_stack(_shutdown: CancellationToken) -> tower::layer::util::Identity {
     // BOUNDARY: replace `Identity` with the composed tower stack:
     //   RequestIdLayer -> TraceLayer -> TimeoutLayer -> RequestBodyLimitLayer
     //   -> a layer that inserts a per-request CancellationToken (child of
@@ -133,10 +128,9 @@ fn standard_stack<S>(_shutdown: CancellationToken) -> tower::layer::util::Identi
 }
 
 fn init_tracing(format: LogFormat) {
-    use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+    use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info"));
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
     let registry = tracing_subscriber::registry().with(filter);
     match format {
@@ -191,17 +185,3 @@ where
         Box::pin(async move { self.run(ctx).await })
     }
 }
-
-// Internal constructor used by `App::run` to build the per-request context seed.
-// Kept here to document the extension types the middleware stack must insert.
-#[allow(dead_code)]
-fn seed_extensions() -> (Identity, RequestId, CancellationToken) {
-    (
-        Identity::Anonymous,
-        RequestId(Uuid::new_v4()),
-        CancellationToken::new(),
-    )
-}
-
-#[allow(dead_code)]
-type SharedState<S> = Arc<S>;

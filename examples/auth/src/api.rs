@@ -11,7 +11,5 @@ pub fn routes() -> Router<AppState> {
     let protected =
         users::routes().authenticated(move |token| crate::token::verify(&secret, token));
 
-    Router::new()
-        .nest("/", auth::routes())
-        .nest("/", protected)
+    Router::new().merge(auth::routes()).merge(protected)
 }

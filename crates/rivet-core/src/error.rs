@@ -90,19 +90,27 @@ struct Payload<'a> {
     message: &'a str,
 }
 
-impl IntoResponse for Error {
-    fn into_response(self) -> Response {
-        // Internal errors are logged with their full cause chain and returned
-        // opaque, so no implementation detail reaches the client. Every other
-        // variant is a deliberate, safe-to-expose message.
-        let message = match &self {
+impl Error {
+    /// The client-facing message. It never repeats the `kind` and never leaks
+    /// internals: `Internal` is logged in full and reported opaquely.
+    fn message(&self) -> String {
+        match self {
+            Error::NotFound(what) => format!("{what} not found"),
+            Error::Invalid(msg) => msg.clone(),
+            Error::Unauthorized => "unauthorized".to_string(),
+            Error::Forbidden => "forbidden".to_string(),
+            Error::Conflict(msg) => msg.clone(),
             Error::Internal(cause) => {
                 tracing::error!(error = ?cause, "internal error");
                 "internal error".to_string()
             }
-            other => other.to_string(),
-        };
+        }
+    }
+}
 
+impl IntoResponse for Error {
+    fn into_response(self) -> Response {
+        let message = self.message();
         let body = Body {
             error: Payload {
                 kind: self.kind(),

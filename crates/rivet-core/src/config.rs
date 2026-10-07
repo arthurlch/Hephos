@@ -28,16 +28,20 @@ pub enum LogFormat {
 impl Config {
     pub fn from_env() -> Result<Self> {
         let addr = match std::env::var("RIVET_ADDR") {
-            Ok(value) => value
-                .parse()
-                .map_err(|_| Error::invalid(format!("RIVET_ADDR is not a socket address: {value}")))?,
+            Ok(value) => value.parse().map_err(|_| {
+                Error::invalid(format!("RIVET_ADDR is not a socket address: {value}"))
+            })?,
             Err(_) => SocketAddr::from(([0, 0, 0, 0], 8080)),
         };
 
         let log = match std::env::var("RIVET_LOG").as_deref() {
             Ok("json") => LogFormat::Json,
             Ok("pretty") | Err(_) => LogFormat::Pretty,
-            Ok(other) => return Err(Error::invalid(format!("RIVET_LOG must be pretty|json: {other}"))),
+            Ok(other) => {
+                return Err(Error::invalid(format!(
+                    "RIVET_LOG must be pretty|json: {other}"
+                )));
+            }
         };
 
         Ok(Config { addr, log })

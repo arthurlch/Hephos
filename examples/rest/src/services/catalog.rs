@@ -81,7 +81,9 @@ mod tests {
 
     fn service() -> (CatalogService, Ctx) {
         let service = CatalogService::load();
-        let state = crate::state::AppState { catalog: service.clone() };
+        let state = crate::state::AppState {
+            catalog: service.clone(),
+        };
         (service, Ctx::detached(state))
     }
 
@@ -95,7 +97,10 @@ mod tests {
     #[tokio::test]
     async fn search_rejects_empty_category() {
         let (service, ctx) = service();
-        let request = SearchRequest { category: "  ".into(), max_price_cents: None };
+        let request = SearchRequest {
+            category: "  ".into(),
+            max_price_cents: None,
+        };
         let err = service.search(&ctx, request).await.unwrap_err();
         assert!(matches!(err, Error::Invalid(_)));
     }
@@ -103,7 +108,10 @@ mod tests {
     #[tokio::test]
     async fn search_filters_by_price() {
         let (service, ctx) = service();
-        let request = SearchRequest { category: "merch".into(), max_price_cents: Some(2000) };
+        let request = SearchRequest {
+            category: "merch".into(),
+            max_price_cents: Some(2000),
+        };
         let found = service.search(&ctx, request).await.unwrap();
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].name, "Rivet Mug");

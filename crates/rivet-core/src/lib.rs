@@ -18,6 +18,7 @@ mod extract;
 mod identity;
 mod router;
 mod task;
+pub mod test;
 
 pub use app::App;
 pub use config::{Config, LogFormat};

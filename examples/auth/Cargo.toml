@@ -14,3 +14,6 @@ uuid = { workspace = true }
 time = { workspace = true }
 jsonwebtoken = { workspace = true }
 argon2 = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

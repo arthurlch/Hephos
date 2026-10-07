@@ -1,0 +1,36 @@
+# cargo-deny policy. Fits Rivet's dependency doctrine (minimal, justified, trusted).
+# Run locally with `cargo deny check`. In CI this is advisory for 0.0.x (non-blocking)
+# until the allow-list is confirmed against the full tree; tighten before 0.1.
+
+[advisories]
+version = 2
+# No ignores. A real advisory should fail review, not be silenced here without cause.
+ignore = []
+
+[licenses]
+version = 2
+confidence-threshold = 0.9
+# Permissive licenses only. Anything outside this list is a deliberate decision.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "MPL-2.0",
+    "CC0-1.0",
+]
+
+[bans]
+# Duplicate versions are a warning (the 1.85 pins introduce a few); wildcards are
+# banned outright — every dependency is pinned in [workspace.dependencies].
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

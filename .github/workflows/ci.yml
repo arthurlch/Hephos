@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # The verified baseline: everything that builds without a database. This mirrors
+  # `make ci` and the validation commands in CLAUDE.md §11. It is authoritative —
+  # a red check here blocks merge.
+  check:
+    name: fmt • clippy • test (offline)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain (pinned by rust-toolchain.toml)
+        run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Clippy
+        run: >-
+          cargo clippy --locked --all-targets --all-features
+          --workspace --exclude example-database --exclude example-auth
+          -- -D warnings
+      - name: Test
+        run: >-
+          cargo test --locked --all-features
+          --workspace --exclude example-database --exclude example-auth
+
+  # The database-backed examples. Their SQLx `query!` macros are verified against a
+  # live schema at compile time, so this job stands up Postgres, applies each
+  # example's migrations with psql, and builds + runs the (otherwise #[ignore]d)
+  # flow tests against it.
+  database:
+    name: db examples (postgres)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      JWT_SECRET: ci-only-secret-ci-only-secret
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      - name: Install psql client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Prepare example-database schema
+        run: |
+          createdb rivet_db
+          psql -d rivet_db -f examples/database/migrations/0001_init.sql
+      - name: Build & test example-database
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/rivet_db
+        run: |
+          cargo clippy --locked -p example-database --all-targets -- -D warnings
+          cargo test --locked -p example-database -- --include-ignored
+
+      - name: Prepare example-auth schema
+        run: |
+          createdb rivet_auth
+          psql -d rivet_auth -f examples/auth/migrations/0001_init.sql
+      - name: Build & test example-auth
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/rivet_auth
+        run: |
+          cargo clippy --locked -p example-auth --all-targets -- -D warnings
+          cargo test --locked -p example-auth -- --include-ignored
+
+  # Dependency hygiene: advisories, license policy, and duplicate/wildcard bans.
+  # Advisory-only for 0.0.x (non-blocking) until the policy in deny.toml is tuned.
+  deny:
+    name: cargo-deny
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      - run: cargo deny check

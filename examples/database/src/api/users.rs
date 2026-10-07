@@ -5,9 +5,7 @@ use crate::domain::user::{CreateUser, User};
 use crate::state::{AppState, Ctx};
 
 pub fn routes() -> Router<AppState> {
-    Router::new()
-        .get("/users/{id}", get)
-        .post("/users", create)
+    Router::new().get("/users/{id}", get).post("/users", create)
 }
 
 pub async fn get(ctx: Ctx, Path(id): Path<Uuid>) -> Result<Json<User>> {

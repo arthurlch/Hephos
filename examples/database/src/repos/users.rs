@@ -20,7 +20,10 @@ impl UserRepo {
         Ok(user)
     }
 
-    pub async fn find_by_email<'e, E: PgExecutor<'e>>(exec: E, email: &str) -> Result<Option<User>> {
+    pub async fn find_by_email<'e, E: PgExecutor<'e>>(
+        exec: E,
+        email: &str,
+    ) -> Result<Option<User>> {
         let user = sqlx::query_as!(
             User,
             "select id, email, created_at from users where email = $1",

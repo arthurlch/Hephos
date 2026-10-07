@@ -24,7 +24,7 @@ mod tool;
 pub use agent::{Agent, Limits};
 pub use message::{Message, Role, TextStream};
 pub use model::{Completion, Model};
-pub use tool::{schema_for as tool_schema, Tool, ToolCall, ToolResult, ToolSchema};
+pub use tool::{Tool, ToolCall, ToolResult, ToolSchema, schema_for as tool_schema};
 
 /// Provider clients.
 ///

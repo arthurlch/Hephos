@@ -4,6 +4,8 @@ mod repos;
 mod services;
 mod state;
 mod tasks;
+#[cfg(test)]
+mod tests;
 
 use rivet::prelude::*;
 

@@ -22,8 +22,8 @@ impl Db {
     /// Connect using `DATABASE_URL`. This is the canonical constructor; call it
     /// in `AppState::init`.
     pub async fn connect_from_env() -> Result<Self> {
-        let url = std::env::var("DATABASE_URL")
-            .map_err(|_| Error::invalid("DATABASE_URL is not set"))?;
+        let url =
+            std::env::var("DATABASE_URL").map_err(|_| Error::invalid("DATABASE_URL is not set"))?;
         Self::connect(&url).await
     }
 

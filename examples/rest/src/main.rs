@@ -2,6 +2,8 @@ mod api;
 mod domain;
 mod services;
 mod state;
+#[cfg(test)]
+mod tests;
 
 use rivet::prelude::*;
 

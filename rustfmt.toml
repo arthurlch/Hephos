@@ -1,0 +1,3 @@
+# Deterministic formatting so `cargo fmt --all --check` is stable across toolchains
+# and CI. Style is stock rustfmt; only the edition is pinned.
+edition = "2024"

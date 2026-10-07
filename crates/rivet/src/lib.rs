@@ -12,8 +12,8 @@
 #![forbid(unsafe_code)]
 
 pub use rivet_core::{
-    sse, ws, App, Config, Ctx, Error, Event, Events, Identity, Json, LogFormat, Path, Principal,
-    Query, Result, Router, Task, CancellationToken,
+    App, CancellationToken, Config, Ctx, Error, Event, Events, Identity, Json, LogFormat, Path,
+    Principal, Query, Result, Router, Task, sse, test, ws,
 };
 
 #[cfg(feature = "db")]

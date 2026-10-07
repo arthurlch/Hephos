@@ -18,7 +18,11 @@ async fn main() -> Result<()> {
     });
 
     let tool = SearchUsers::new(directory, caller);
-    let matches = tool.call(SearchQuery { query: "ada".into() }).await?;
+    let matches = tool
+        .call(SearchQuery {
+            query: "ada".into(),
+        })
+        .await?;
 
     println!("{} match(es)", matches.len());
     for user in matches {

@@ -3,6 +3,8 @@ mod domain;
 mod repos;
 mod services;
 mod state;
+#[cfg(test)]
+mod tests;
 mod token;
 
 use rivet::prelude::*;

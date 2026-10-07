@@ -1,5 +1,7 @@
 mod api;
 mod state;
+#[cfg(test)]
+mod tests;
 
 use rivet::prelude::*;
 

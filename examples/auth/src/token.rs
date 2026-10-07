@@ -1,4 +1,4 @@
-use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
+use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use rivet::prelude::*;
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -10,9 +10,17 @@ const TTL_SECONDS: i64 = 3600;
 /// Sign a short-lived access token for an authenticated user.
 pub fn issue(secret: &[u8], id: Uuid, roles: Vec<String>) -> Result<String> {
     let exp = (OffsetDateTime::now_utc().unix_timestamp() + TTL_SECONDS) as usize;
-    let claims = Claims { sub: id, roles, exp };
-    encode(&Header::default(), &claims, &EncodingKey::from_secret(secret))
-        .map_err(|e| Error::internal(format!("sign token: {e}")))
+    let claims = Claims {
+        sub: id,
+        roles,
+        exp,
+    };
+    encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret(secret),
+    )
+    .map_err(|e| Error::internal(format!("sign token: {e}")))
 }
 
 /// Verify a token's signature and expiry, returning the caller's [`Identity`].

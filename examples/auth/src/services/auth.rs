@@ -1,7 +1,7 @@
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
-use argon2::password_hash::rand_core::OsRng;
 use argon2::password_hash::SaltString;
+use argon2::password_hash::rand_core::OsRng;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use rivet::prelude::*;
 
@@ -22,7 +22,10 @@ impl AuthService {
         let secret = std::env::var("JWT_SECRET")
             .map_err(|_| Error::invalid("JWT_SECRET is not set"))?
             .into_bytes();
-        Ok(AuthService { db, secret: Arc::new(secret) })
+        Ok(AuthService {
+            db,
+            secret: Arc::new(secret),
+        })
     }
 
     pub async fn register(&self, _ctx: &Ctx, input: Credentials) -> Result<User> {
@@ -32,7 +35,10 @@ impl AuthService {
         let hash = hash_password(&input.password)?;
 
         let mut tx = self.db.begin().await?;
-        if UserRepo::find_auth_by_email(tx.exec(), &input.email).await?.is_some() {
+        if UserRepo::find_auth_by_email(tx.exec(), &input.email)
+            .await?
+            .is_some()
+        {
             return Err(Error::conflict("email already registered"));
         }
         let user = UserRepo::create(tx.exec(), &input.email, &hash).await?;
@@ -43,12 +49,12 @@ impl AuthService {
     pub async fn login(&self, _ctx: &Ctx, input: Credentials) -> Result<TokenResponse> {
         let row = UserRepo::find_auth_by_email(self.db.pool(), &input.email).await?;
 
-        // Verify even when the user is missing, against a fixed hash, so response
-        // time does not reveal whether the email exists.
+        // Verify even when the user is missing, against a known-valid decoy hash,
+        // so response time does not reveal whether the email exists.
         let authenticated = match &row {
             Some(row) => verify_password(&input.password, &row.password_hash),
             None => {
-                let _ = verify_password(&input.password, DUMMY_HASH);
+                let _ = verify_password(&input.password, decoy_hash());
                 false
             }
         };
@@ -76,6 +82,13 @@ fn verify_password(password: &str, hash: &str) -> bool {
     }
 }
 
-// A valid argon2 hash of a throwaway value, used to equalize timing on the
-// user-not-found path.
-const DUMMY_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHRzYWx0$RdescudvJCsgt3ub+b+dWRWJTmaaJObG";
+// A guaranteed-valid decoy hash, computed once. Computing it (rather than
+// hardcoding a literal that might fail to parse) ensures the user-not-found path
+// performs the same argon2 work as a real verification, closing the timing side
+// channel.
+fn decoy_hash() -> &'static str {
+    static DECOY: OnceLock<String> = OnceLock::new();
+    DECOY
+        .get_or_init(|| hash_password("rivet-timing-equalizer").expect("decoy hash is valid"))
+        .as_str()
+}

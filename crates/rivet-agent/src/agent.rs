@@ -110,7 +110,11 @@ impl<M: Model> Agent<M> {
     /// Its contract is fixed here (bounded by `Limits`, errors on overrun, feeds
     /// `ToolResult`s back as messages). The provider-specific encoding of tool
     /// calls is handled inside each [`Model`] implementation.
-    async fn drive(&self, input: &str, response_schema: Option<serde_json::Value>) -> Result<Message> {
+    async fn drive(
+        &self,
+        input: &str,
+        response_schema: Option<serde_json::Value>,
+    ) -> Result<Message> {
         let mut messages = vec![Message::user(input)];
         for _turn in 0..self.limits.max_turns {
             let completion = Completion {
@@ -174,7 +178,10 @@ impl RegisteredTool {
                 let output = tool.call(input).await?;
                 let output = serde_json::to_value(output)
                     .map_err(|e| Error::internal(format!("tool {name} output: {e}")))?;
-                Ok(ToolResult { name: name.to_string(), output })
+                Ok(ToolResult {
+                    name: name.to_string(),
+                    output,
+                })
             }) as futures::future::BoxFuture<'static, Result<ToolResult>>
         });
         RegisteredTool { schema, invoke }

@@ -7,9 +7,7 @@ use crate::state::{AppState, Ctx};
 /// Every route here is behind `Router::authenticated`, so an unauthenticated
 /// request never reaches these handlers.
 pub fn routes() -> Router<AppState> {
-    Router::new()
-        .get("/me", me)
-        .get("/users/{id}", get)
+    Router::new().get("/me", me).get("/users/{id}", get)
 }
 
 /// Any authenticated user can read their own profile.

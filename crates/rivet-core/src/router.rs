@@ -71,8 +71,27 @@ where
         self.method(path, routing::delete(handler))
     }
 
-    /// Mount a sub-router under a prefix. The only composition primitive.
+    /// Combine another router at the same level. This is how `api::routes()`
+    /// assembles the per-resource routers, each of which already declares full
+    /// paths (`/users`, `/products`).
+    pub fn merge(mut self, router: Router<S>) -> Self {
+        self.inner = self.inner.merge(router.inner);
+        self
+    }
+
+    /// Mount a sub-router under a non-root prefix, e.g. nesting an orders router
+    /// under `/users/{id}`. Do not nest at `"/"` — use [`Router::merge`] for
+    /// same-level composition.
+    ///
+    /// Panics early, with a Rivet message, if `prefix` is `"/"` or empty. The
+    /// underlying router also rejects this, but with a cryptic message; catching
+    /// it here names the fix (`merge`) so the mistake is obvious the first time.
     pub fn nest(mut self, prefix: &str, router: Router<S>) -> Self {
+        assert!(
+            prefix != "/" && !prefix.is_empty(),
+            "Router::nest(\"{prefix}\", ..) is invalid: nesting at the root is not \
+             supported. Use Router::merge(..) to combine routers at the same level.",
+        );
         self.inner = self.inner.nest(prefix, router.inner);
         self
     }

@@ -201,16 +201,43 @@ Rules:
 
 ## 10. Testing
 
-- Unit tests live in a `#[cfg(test)] mod tests` block at the bottom of the file
-  they test. Test services and repos here.
-- Integration tests live in `tests/` at the crate root and exercise the app
-  through its HTTP surface.
-- Every new endpoint gets at least: one success test and one failure test (the
-  error path that returns a non-2xx).
-- Tests build a `Ctx` with `Ctx::detached(state)` and call services directly, or
-  drive the router with a test client.
-- Tests must not reach the network. Database tests use a transaction rolled back
-  at the end, or a disposable test database.
+**`cargo check`, `cargo build`, and `cargo clippy` do NOT prove the app works.**
+They never run a request, so they miss every wiring bug: route composition,
+middleware order, extractor resolution, status mapping. Those are only caught by a
+test that drives the real router. A green type-check with no router test is a false
+sense of safety — this rule exists because exactly that gap shipped a startup panic
+once already.
+
+Two layers, both required:
+
+- **Unit tests** — `#[cfg(test)] mod tests` at the bottom of a file, testing a
+  service, repo, or tool by building `Ctx::detached(state)` and calling methods.
+- **HTTP-surface tests** — drive the *real* router through `rivet::test::TestClient`,
+  which applies the same routes and middleware the app serves. Every app has them.
+
+Non-negotiable per app:
+
+- A **`routes_build` test** that calls `api::routes()` and asserts it does not
+  panic. This is the canary for route-composition bugs (it is what catches a bad
+  `nest`/`merge`). It costs one line; it is never optional.
+- For every endpoint: at least one success test and one failure test (the non-2xx
+  path), driven through `TestClient`, asserting status and the `error.kind`.
+
+Where tests live:
+
+- A binary crate (an app, the examples) cannot be reached from `tests/` — it has no
+  lib target. Put HTTP-surface tests in a `#[cfg(test)] mod tests;` module declared
+  in `main.rs` (file `src/tests.rs`). They can then use `crate::api::routes()`.
+- A library crate uses `tests/` as normal.
+
+Discipline:
+
+- Tests must not reach the network. Exercise `Model` via a test implementation;
+  use `TestClient`, never a real socket.
+- Database tests run inside a rolled-back transaction or a disposable database.
+  Mark tests that need external infrastructure (Postgres, a wired migration)
+  `#[ignore = "..."]` with the reason, so `cargo test` stays green offline and the
+  requirement is explicit.
 
 ---
 
@@ -227,8 +254,24 @@ All four must pass. `-D warnings` means clippy warnings are errors — fix them,
 do not `#[allow]` them without a written reason. If `sqlx` offline mode is in use,
 run `cargo sqlx prepare` after changing any query.
 
-Never report a task complete if any command above fails. Report the failure and
-the output instead.
+`cargo test --all` is load-bearing, not a formality: it is the only command above
+that runs a request. It must include the `routes_build` canary and `TestClient`
+endpoint tests (§10). A change to any route, handler, extractor, or middleware is
+not done until a router-driving test covers it.
+
+For a change you cannot fully cover with an offline test — anything behind
+`#[ignore]`, or a new transport — **run the app and hit it** before claiming done:
+
+```sh
+RIVET_ADDR=127.0.0.1:18080 cargo run -p <app> &
+curl -s -o /dev/null -w '%{http_code}\n' localhost:18080/<route>
+```
+
+A passing type-check is not evidence the app runs. Launch it or test it; do not
+infer success from compilation.
+
+Never report a task complete if any command above fails, or if you have not
+actually observed the code run. Report the failure and the output instead.
 
 ---
 

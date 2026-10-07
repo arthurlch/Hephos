@@ -1,7 +1,7 @@
 use rivet_core::Result;
 use schemars::JsonSchema;
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 /// A strongly typed capability an agent may call.
 ///

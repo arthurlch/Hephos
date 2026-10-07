@@ -46,14 +46,19 @@ mod tests {
     use uuid::Uuid;
 
     fn tool(roles: Vec<String>) -> SearchUsers {
-        let caller = Identity::User(Principal { id: Uuid::nil(), roles });
+        let caller = Identity::User(Principal {
+            id: Uuid::nil(),
+            roles,
+        });
         SearchUsers::new(Directory::load(), caller)
     }
 
     #[tokio::test]
     async fn call_without_role_is_forbidden() {
         let err = tool(vec![])
-            .call(SearchQuery { query: "ada".into() })
+            .call(SearchQuery {
+                query: "ada".into(),
+            })
             .await
             .unwrap_err();
         assert!(matches!(err, Error::Forbidden));
@@ -71,7 +76,9 @@ mod tests {
     #[tokio::test]
     async fn call_returns_matches() {
         let found = tool(vec!["support".into()])
-            .call(SearchQuery { query: "turing".into() })
+            .call(SearchQuery {
+                query: "turing".into(),
+            })
             .await
             .unwrap();
         assert_eq!(found.len(), 1);
