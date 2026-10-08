@@ -457,9 +457,9 @@ mapped to the milestone that will carry it. Severities: **H** blocks a milestone
 acceptance, **M** should land in its window, **L** opportunistic.
 
 **Pull-forward (these undermine *currently documented* contracts — fix as the
-relevant milestone opens, not later):** `From<sqlx::Error>` missing, `Db::migrate`
-no-op, ~~extractor error leakage~~ (fixed in `0.0.2`), the agent `stream`/`timeout`
-doc claims, and `rivet-mcp` discarding the tool instance.
+relevant milestone opens, not later):** ~~`From<sqlx::Error>` missing~~ (fixed in
+`0.0.2`), `Db::migrate` no-op, ~~extractor error leakage~~ (fixed in `0.0.2`), the
+agent `stream`/`timeout` doc claims, and `rivet-mcp` discarding the tool instance.
 
 ### `rivet-core`
 
@@ -478,7 +478,7 @@ doc claims, and `rivet-mcp` discarding the tool instance.
 
 | Sev | Finding (location) | Fix | Target |
 | --- | --- | --- | --- |
-| H | `rivet-core::Error` has no `From<sqlx::Error>`, so the CONVENTIONS repo snippet (`…await?`) **will not compile** (`error.rs` / `CONVENTIONS §2.4`) | add `From<sqlx::Error> → Internal` (or export `into_internal` and fix the docs) | `0.0.3` (pull-forward) |
+| H | `rivet-core::Error` had no `From<sqlx::Error>`, so the repo `…await?` snippet would not compile — surfaced as the `database` CI job's `E0277` | added a feature-gated `From<sqlx::Error> → Internal` in `rivet-core` (behind a `sqlx` feature that `rivet-db` enables) | ✅ pulled forward to `0.0.2` |
 | H | `Db::migrate` is a silent no-op returning `Ok(())` while its doc promises to run migrations (`lib.rs:migrate`) | take a `&Migrator` (app passes `migrate!()`) or make it a doc-only marker | `0.0.3` |
 | H | No `acquire_timeout`/`statement_timeout`; a stuck query pins a connection → pool exhaustion/DoS (`lib.rs:connect`) | set acquire + statement timeouts at connect | `0.0.3` → tune `0.2.0` |
 | H | No test fixtures (rolled-back `Tx`, disposable DB) despite CONVENTIONS §5 promising them | add `test_pool()` + `with_rolled_back_tx(..)` | `0.0.3` |

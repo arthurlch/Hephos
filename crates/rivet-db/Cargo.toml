@@ -8,7 +8,8 @@ repository.workspace = true
 description = "Rivet database layer: Db and Tx over SQLx/Postgres."
 
 [dependencies]
-rivet-core = { workspace = true }
+# `sqlx` feature gives `From<sqlx::Error> for rivet::Error`, so repos can use `?`.
+rivet-core = { workspace = true, features = ["sqlx"] }
 sqlx = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }

@@ -11,9 +11,10 @@ pub enum AppEvent {
 }
 impl Event for AppEvent {}
 
+// AppState holds the shared event bus and the services. The services own their own
+// `Db` handle, so AppState does not separately store one (an unread field).
 #[derive(Clone)]
 pub struct AppState {
-    pub db: Db,
     pub events: Events<AppEvent>,
     pub users: UserService,
 }
@@ -23,7 +24,7 @@ impl AppState {
         let db = Db::connect_from_env().await?;
         db.migrate().await?;
         let events = Events::new(1024);
-        let users = UserService::new(db.clone(), events.clone());
-        Ok(AppState { db, events, users })
+        let users = UserService::new(db, events.clone());
+        Ok(AppState { events, users })
     }
 }
