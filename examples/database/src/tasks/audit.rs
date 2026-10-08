@@ -1,4 +1,4 @@
-use rivet::prelude::*;
+use hephos::prelude::*;
 
 use crate::state::{AppEvent, AppState};
 

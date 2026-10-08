@@ -1,4 +1,4 @@
-# cargo-deny policy. Fits Rivet's dependency doctrine (minimal, justified, trusted).
+# cargo-deny policy. Fits Hephos's dependency doctrine (minimal, justified, trusted).
 # Run locally with `cargo deny check`. In CI this is advisory for 0.0.x (non-blocking)
 # until the allow-list is confirmed against the full tree; tighten before 0.1.
 

@@ -1,5 +1,5 @@
-use rivet::agent::{Completion, Message, Model, TextStream};
-use rivet::prelude::*;
+use hephos::agent::{Completion, Message, Model, TextStream};
+use hephos::prelude::*;
 
 /// Offline `Model` for a deterministic workflow run (as in example-agent).
 pub struct ScriptedModel;

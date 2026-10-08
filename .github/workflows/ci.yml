@@ -49,7 +49,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: >-
           cargo doc --locked --no-deps --all-features
-          -p rivet -p rivet-core -p rivet-db -p rivet-agent -p rivet-mcp
+          -p hephos -p hephos-core -p hephos-db -p hephos-agent -p hephos-mcp
 
   features:
     name: feature matrix
@@ -64,7 +64,7 @@ jobs:
       # Every combination of the meta crate's features must compile. `--no-dev-deps`
       # rewrites Cargo.toml while running, which is incompatible with `--locked`, so
       # this job intentionally does not pass `--locked`.
-      - run: cargo hack --feature-powerset --no-dev-deps check -p rivet
+      - run: cargo hack --feature-powerset --no-dev-deps check -p hephos
 
   database:
     name: db examples (postgres)
@@ -91,29 +91,29 @@ jobs:
       - name: Install psql client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
 
-      - name: Test rivet-db against a live database
+      - name: Test hephos-db against a live database
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
-        run: cargo test --locked -p rivet-db -- --include-ignored
+        run: cargo test --locked -p hephos-db -- --include-ignored
 
       - name: Prepare example-database schema
         run: |
-          createdb rivet_db
-          psql -d rivet_db -f examples/database/migrations/0001_init.sql
+          createdb hephos_db
+          psql -d hephos_db -f examples/database/migrations/0001_init.sql
       - name: Build & test example-database
         env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432/rivet_db
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/hephos_db
         run: |
           cargo clippy --locked -p example-database --all-targets -- -D warnings
           cargo test --locked -p example-database -- --include-ignored
 
       - name: Prepare example-auth schema
         run: |
-          createdb rivet_auth
-          psql -d rivet_auth -f examples/auth/migrations/0001_init.sql
+          createdb hephos_auth
+          psql -d hephos_auth -f examples/auth/migrations/0001_init.sql
       - name: Build & test example-auth
         env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432/rivet_auth
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/hephos_auth
         run: |
           cargo clippy --locked -p example-auth --all-targets -- -D warnings
           cargo test --locked -p example-auth -- --include-ignored

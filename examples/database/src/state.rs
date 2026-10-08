@@ -1,9 +1,9 @@
-use rivet::prelude::*;
+use hephos::prelude::*;
 use uuid::Uuid;
 
 use crate::services::users::UserService;
 
-pub type Ctx = rivet::Ctx<AppState>;
+pub type Ctx = hephos::Ctx<AppState>;
 
 #[derive(Debug, Clone)]
 pub enum AppEvent {

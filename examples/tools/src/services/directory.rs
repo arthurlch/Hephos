@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use rivet::prelude::*;
+use hephos::prelude::*;
 use uuid::Uuid;
 
 use crate::domain::user::UserSummary;

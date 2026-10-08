@@ -1,0 +1,19 @@
+[package]
+name = "hephos-db"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Hephos database layer: Db and Tx over SQLx/Postgres."
+
+[dependencies]
+# `sqlx` feature gives `From<sqlx::Error> for hephos::Error`, so repos can use `?`.
+hephos-core = { workspace = true, features = ["sqlx"] }
+sqlx = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+sqlx = { workspace = true }

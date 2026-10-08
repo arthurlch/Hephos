@@ -1,5 +1,5 @@
 <!--
-Rivet is agent-first: this checklist encodes the invariants so every change — human
+Hephos is agent-first: this checklist encodes the invariants so every change — human
 or agent — is verified the same way. Tick each box or say why it does not apply.
 -->
 
@@ -17,7 +17,7 @@ Validation (CLAUDE.md §11 — all must pass locally):
 
 Doctrine (see CLAUDE.md / CONVENTIONS.md):
 - [ ] New code is in the right directory and follows the nearest example.
-- [ ] One error type (`rivet::Error`); no new error enums in app code.
+- [ ] One error type (`hephos::Error`); no new error enums in app code.
 - [ ] Every new/changed endpoint has a `TestClient` success **and** failure test.
 - [ ] A `routes_build` test exists for any app whose routes changed.
 - [ ] No `unsafe`, no `Arc<Mutex<_>>` app state, no detached `tokio::spawn` in handlers.

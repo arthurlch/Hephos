@@ -1,5 +1,5 @@
+use hephos::prelude::*;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
-use rivet::prelude::*;
 use time::OffsetDateTime;
 use uuid::Uuid;
 

@@ -3,7 +3,7 @@ mod domain;
 mod model;
 
 use futures::StreamExt;
-use rivet::prelude::*;
+use hephos::prelude::*;
 
 use crate::domain::report::Report;
 use crate::model::ScriptedModel;

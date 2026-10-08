@@ -1,9 +1,9 @@
-use rivet::prelude::*;
+use hephos::prelude::*;
 
 use crate::services::auth::AuthService;
 use crate::services::users::UserService;
 
-pub type Ctx = rivet::Ctx<AppState>;
+pub type Ctx = hephos::Ctx<AppState>;
 
 // AppState holds the services; each owns its own `Db` handle, so AppState does not
 // separately store one (an unread field).

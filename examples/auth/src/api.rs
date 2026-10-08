@@ -1,7 +1,7 @@
 pub mod auth;
 pub mod users;
 
-use rivet::prelude::*;
+use hephos::prelude::*;
 
 use crate::state::AppState;
 

@@ -2,7 +2,7 @@ mod domain;
 mod services;
 mod tools;
 
-use rivet::prelude::*;
+use hephos::prelude::*;
 use uuid::Uuid;
 
 use crate::domain::user::SearchQuery;

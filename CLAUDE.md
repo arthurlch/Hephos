@@ -5,7 +5,7 @@ this file and your own judgment disagree, this file wins. When this file and
 `ARCHITECTURE.md` or `CONVENTIONS.md` disagree, stop and reconcile them before
 writing code — that is a bug in the doctrine, not a license to improvise.
 
-Rivet exists so that **you** — a coding agent — can build production backends with
+Hephos exists so that **you** — a coding agent — can build production backends with
 no ambiguity. Every rule below removes a decision you would otherwise have to
 guess at. Follow them exactly and your code will be indistinguishable from the
 rest of the repository. That is the goal.
@@ -73,7 +73,7 @@ api  →  services  →  repos  →  database
 - Handlers (`api/`) **never** touch `repos/` or run SQL. They extract input, call
   one service method, and return. Keep them under ~15 lines.
 - Services (`services/`) **never** touch HTTP types (no `StatusCode`, no
-  `axum::`). They speak in domain types and `rivet::Error`.
+  `axum::`). They speak in domain types and `hephos::Error`.
 - Repos (`repos/`) **never** make business decisions. They run one query and
   return domain types. No `if` on business rules.
 - `domain/` depends on nothing in the app. Everything may depend on `domain/`.
@@ -85,8 +85,8 @@ A handler that calls a repo directly is a bug. A service that returns a
 
 ## 3. Errors: one type, always
 
-- Every fallible function returns `rivet::Result<T>` (= `Result<T, rivet::Error>`).
-- Never define a new error enum in an app. Use `rivet::Error`.
+- Every fallible function returns `hephos::Result<T>` (= `Result<T, hephos::Error>`).
+- Never define a new error enum in an app. Use `hephos::Error`.
 - Construct domain errors with the constructors: `Error::not_found("user")`,
   `Error::invalid("email is required")`, `Error::conflict("email taken")`.
 - For unexpected failures, use `?` — `From` conversions turn `sqlx::Error` and
@@ -104,7 +104,7 @@ See `CONVENTIONS.md § Errors` for the full table of variant → status.
 ## 4. The handler shape (memorize this)
 
 ```rust
-use rivet::prelude::*;
+use hephos::prelude::*;
 use crate::state::Ctx;
 use crate::domain::user::{CreateUser, User};
 
@@ -212,7 +212,7 @@ Two layers, both required:
 
 - **Unit tests** — `#[cfg(test)] mod tests` at the bottom of a file, testing a
   service, repo, or tool by building `Ctx::detached(state)` and calling methods.
-- **HTTP-surface tests** — drive the *real* router through `rivet::test::TestClient`,
+- **HTTP-surface tests** — drive the *real* router through `hephos::test::TestClient`,
   which applies the same routes and middleware the app serves. Every app has them.
 
 Non-negotiable per app:
@@ -241,7 +241,22 @@ Discipline:
 
 ---
 
-## 11. Validation commands (run before you claim done)
+## 11. Compiler feedback & validation
+
+Rust's compile time is the agent feedback loop's main cost — iterate on the fast
+path, then run the full gate once before claiming done.
+
+**While iterating (the fast path):**
+- **Type-check first, test last.** After an edit run `cargo check` (alias `cargo ck`)
+  — ~5–10× faster than `build`/`test`, and it catches type/borrow errors immediately.
+  Only run tests once it checks clean.
+- **Scope it.** Prefer `cargo check -p <crate>` and `cargo test -p <crate> <testname>`
+  over `--workspace` while iterating.
+- **Don't trigger needless rebuilds.** Avoid flipping `--all-features` /
+  `--no-default-features` back and forth (each flip recompiles the graph). A faster
+  linker is available opt-in in `.cargo/config.toml`.
+
+**Before you claim done (the gate — all must pass):**
 
 ```sh
 cargo fmt --all
@@ -263,7 +278,7 @@ For a change you cannot fully cover with an offline test — anything behind
 `#[ignore]`, or a new transport — **run the app and hit it** before claiming done:
 
 ```sh
-RIVET_ADDR=127.0.0.1:18080 cargo run -p <app> &
+HEPHOS_ADDR=127.0.0.1:18080 cargo run -p <app> &
 curl -s -o /dev/null -w '%{http_code}\n' localhost:18080/<route>
 ```
 
@@ -294,7 +309,7 @@ guessing. If you cannot, the change is not done:
 1. Where does this code belong? (→ §1)
 2. Which existing abstraction did I reuse? (→ §0)
 3. What is this type/function called, and why that name? (→ `CONVENTIONS.md`)
-4. What error type does it return? (→ §3, always `rivet::Error`)
+4. What error type does it return? (→ §3, always `hephos::Error`)
 5. How is it exposed? (→ §4)
 6. How is state owned and accessed? (→ §5)
 7. How does the async behave under cancellation? (→ §6)
@@ -319,7 +334,7 @@ guessing. If you cannot, the change is not done:
 - a second way to do something that already has a canonical way
 
 **Preferred**
-- `rivet::Result<T>` everywhere
+- `hephos::Result<T>` everywhere
 - `ctx: Ctx` first parameter everywhere
 - `Json<T>` in, `Result<Json<T>>` out
 - compile-checked `sqlx::query_as!`

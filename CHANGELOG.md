@@ -1,13 +1,25 @@
 # Changelog
 
-All notable changes to Rivet are recorded here. Format follows
+All notable changes to Hephos are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer.
 
 ## [Unreleased]
 
+### Changed
+- **Renamed the project `rivet` → `hephos`** (crates `hephos`, `hephos-core`,
+  `hephos-db`, `hephos-agent`, `hephos-mcp`; env vars `HEPHOS_*`; all imports, docs,
+  and examples). "Rivet" collided with existing projects; "Hephos" is distinct.
+
+### Added (DX)
+- `.cargo/config.toml` with `cargo ck`/`cargo lint` aliases and opt-in faster-linker
+  guidance; `[profile.dev] debug = "line-tables-only"` for faster edit→check links.
+- CLAUDE.md §11 "Compiler feedback" protocol (check-before-test, scope commands) —
+  agent iteration speed is `cargo check` speed.
+- MILESTONES: the agent-turns-to-green-build benchmark as the headline adoption proof.
+
 ### Fixed (CI)
-- `rivet-core` gains a feature-gated `From<sqlx::Error> for Error` (behind a `sqlx`
-  feature that `rivet-db` enables), so the documented `sqlx::query!(...).await?`
+- `hephos-core` gains a feature-gated `From<sqlx::Error> for Error` (behind a `sqlx`
+  feature that `hephos-db` enables), so the documented `sqlx::query!(...).await?`
   repository pattern compiles — this was the `database` CI job's `E0277` failure.
 - `features` CI job drops `--locked` (incompatible with `cargo hack --no-dev-deps`,
   which rewrites `Cargo.toml`).
@@ -17,18 +29,18 @@ All notable changes to Rivet are recorded here. Format follows
 ## [0.0.2] — The real HTTP core
 
 ### Added
-- **Standard middleware stack** (`rivet-core::stack`), installed by `App::run`:
+- **Standard middleware stack** (`hephos-core::stack`), installed by `App::run`:
   request-id + `x-request-id` response header, a per-request tracing span, request
   timeout (`408`, bounds response generation — streaming-safe), body-size limit
   (`413`), a seeded default `Identity`, and a per-request `CancellationToken` that is a
   child of the shutdown token.
-- `Config` finalized with `RIVET_TIMEOUT_SECS` and `RIVET_BODY_LIMIT` (plus existing
-  `RIVET_ADDR`/`RIVET_LOG`), fully unit-tested via a pure parser.
+- `Config` finalized with `HEPHOS_TIMEOUT_SECS` and `HEPHOS_BODY_LIMIT` (plus existing
+  `HEPHOS_ADDR`/`HEPHOS_LOG`), fully unit-tested via a pure parser.
 - Graceful-shutdown hardening: bounded task-drain deadline; background-task panics
   (`JoinError`) are logged, not swallowed.
 - `TestClient` now wraps the real stack, with `with_stack(timeout, body_limit)`,
   `post_json_with_token`, and `TestResponse::{header, error_kind}`.
-- `rivet-core` test suites: config, error, ctx, identity, event, router unit tests; an
+- `hephos-core` test suites: config, error, ctx, identity, event, router unit tests; an
   HTTP integration test; and a standard-stack acceptance test (request-id, `408`,
   `413`, identity seed).
 
@@ -52,9 +64,9 @@ Pre-alpha scaffold. The doctrine (`CLAUDE.md`, `ARCHITECTURE.md`, `CONVENTIONS.m
 the public API contract (`crates/`), and the reference examples are in place.
 
 ### Added
-- Framework crates: `rivet-core` (App, Ctx, Error, Router, extractors, Config, Task,
-  Events), `rivet-db`, `rivet-agent`, `rivet-mcp`, and the `rivet` meta crate.
-- `rivet::test::TestClient` — first-class in-memory harness that drives the real
+- Framework crates: `hephos-core` (App, Ctx, Error, Router, extractors, Config, Task,
+  Events), `hephos-db`, `hephos-agent`, `hephos-mcp`, and the `hephos` meta crate.
+- `hephos::test::TestClient` — first-class in-memory harness that drives the real
   router.
 - Nine reference examples: rest, auth, database, websocket, streaming, agent, tools,
   workflow, mcp.

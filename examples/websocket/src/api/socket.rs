@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use futures::{SinkExt, StreamExt};
-use rivet::prelude::*;
-use rivet::ws::{Message, Response, WebSocket, WebSocketUpgrade};
+use hephos::prelude::*;
+use hephos::ws::{Message, Response, WebSocket, WebSocketUpgrade};
 
 use crate::state::{AppState, Ctx};
 

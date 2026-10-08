@@ -1,5 +1,5 @@
-use rivet::mcp::McpServer;
-use rivet::prelude::*;
+use hephos::mcp::McpServer;
+use hephos::prelude::*;
 
 use crate::services::directory::Directory;
 use crate::tools::search_users::SearchUsers;

@@ -13,7 +13,7 @@ src/
   workflows/onboarding.rs the workflow: register → checkpoint → welcome.
 ```
 
-Rivet ships no workflow engine. A workflow is ordinary Rust, read top to bottom:
+Hephos ships no workflow engine. A workflow is ordinary Rust, read top to bottom:
 each step is a private method, failures propagate with `?`, and cancellation is
 inherited from `ctx`. Durable/replayable execution is a future, additive layer
 (see `MILESTONES.md`) reachable without changing this shape.

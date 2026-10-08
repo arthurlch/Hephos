@@ -6,7 +6,7 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
-rivet = { workspace = true, features = ["db"] }
+hephos = { workspace = true, features = ["db"] }
 tokio = { workspace = true }
 serde = { workspace = true }
 sqlx = { workspace = true }

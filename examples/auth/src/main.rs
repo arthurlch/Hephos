@@ -7,7 +7,7 @@ mod state;
 mod tests;
 mod token;
 
-use rivet::prelude::*;
+use hephos::prelude::*;
 
 use crate::state::AppState;
 
