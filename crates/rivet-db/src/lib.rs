@@ -87,3 +87,17 @@ impl Tx {
 fn into_internal(error: sqlx::Error) -> Error {
     Error::Internal(anyhow::Error::new(error))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Depends on `rivet-core`'s `sqlx` feature (enabled by this crate). Proves the
+    // documented repository pattern — `sqlx::query!(...).await?` — actually compiles
+    // and maps a SQLx error to an opaque `Internal`.
+    #[test]
+    fn sqlx_error_converts_to_internal() {
+        let error: Error = sqlx::Error::RowNotFound.into();
+        assert!(matches!(error, Error::Internal(_)));
+    }
+}

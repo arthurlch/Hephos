@@ -61,8 +61,10 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-hack
-      # Every combination of the meta crate's features must compile.
-      - run: cargo hack --locked --feature-powerset --no-dev-deps check -p rivet
+      # Every combination of the meta crate's features must compile. `--no-dev-deps`
+      # rewrites Cargo.toml while running, which is incompatible with `--locked`, so
+      # this job intentionally does not pass `--locked`.
+      - run: cargo hack --feature-powerset --no-dev-deps check -p rivet
 
   database:
     name: db examples (postgres)
@@ -119,10 +121,11 @@ jobs:
   deny:
     name: cargo-deny
     runs-on: ubuntu-latest
+    # Advisory for 0.0.x (non-blocking). The official action handles workspace
+    # dependency resolution correctly (the bare CLI tripped on inherited deps).
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-      - uses: taiki-e/install-action@v2
+      - uses: EmbarkStudios/cargo-deny-action@v2
         with:
-          tool: cargo-deny
-      - run: cargo deny check
+          command: check

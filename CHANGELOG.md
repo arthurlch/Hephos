@@ -5,6 +5,15 @@ All notable changes to Rivet are recorded here. Format follows
 
 ## [Unreleased]
 
+### Fixed (CI)
+- `rivet-core` gains a feature-gated `From<sqlx::Error> for Error` (behind a `sqlx`
+  feature that `rivet-db` enables), so the documented `sqlx::query!(...).await?`
+  repository pattern compiles — this was the `database` CI job's `E0277` failure.
+- `features` CI job drops `--locked` (incompatible with `cargo hack --no-dev-deps`,
+  which rewrites `Cargo.toml`).
+- `cargo-deny` CI job uses the official `EmbarkStudios/cargo-deny-action@v2`, which
+  resolves workspace-inherited dependencies correctly (the bare CLI tripped on them).
+
 ## [0.0.2] — The real HTTP core
 
 ### Added

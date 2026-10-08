@@ -37,6 +37,17 @@ pub enum Error {
 /// The application-wide result alias. Prefer `rivet::Result<T>` everywhere.
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
+// Let repositories use `?` on SQLx results directly: any `sqlx::Error` becomes an
+// opaque `Internal` (logged in full, returned as a generic 500). "Row not found" is
+// still expressed explicitly by repos via `fetch_optional` → `None`, never a leaked
+// `RowNotFound`. Gated behind the `sqlx` feature so core stays sqlx-free by default.
+#[cfg(feature = "sqlx")]
+impl From<sqlx::Error> for Error {
+    fn from(error: sqlx::Error) -> Self {
+        Error::Internal(anyhow::Error::new(error))
+    }
+}
+
 impl Error {
     pub fn not_found(what: impl Into<String>) -> Self {
         Error::NotFound(what.into())

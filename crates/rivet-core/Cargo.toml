@@ -20,6 +20,13 @@ tracing-subscriber = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 uuid = { workspace = true }
+# Optional: only to provide `From<sqlx::Error> for Error`. Core stays sqlx-free
+# unless a db-using crate turns this on (rivet-db does).
+sqlx = { workspace = true, optional = true }
+
+[features]
+# Enables `From<sqlx::Error> for Error` so repositories can use `?` directly.
+sqlx = ["dep:sqlx"]
 
 [dev-dependencies]
 axum = { workspace = true }
