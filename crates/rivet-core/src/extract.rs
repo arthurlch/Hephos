@@ -75,14 +75,20 @@ where
     }
 }
 
+// Bad input is a client error, but the raw deserializer text (field names, expected
+// tokens, positions) is internal detail. Log it for debugging; return a fixed,
+// safe-to-expose message so the response leaks nothing about the schema.
 fn map_json(rejection: JsonRejection) -> Error {
-    Error::invalid(rejection.body_text())
+    tracing::debug!(detail = %rejection.body_text(), "rejected JSON body");
+    Error::invalid("request body is not valid JSON for this endpoint")
 }
 
 fn map_path(rejection: PathRejection) -> Error {
-    Error::invalid(rejection.body_text())
+    tracing::debug!(detail = %rejection.body_text(), "rejected path parameter");
+    Error::invalid("invalid path parameter")
 }
 
 fn map_query(rejection: QueryRejection) -> Error {
-    Error::invalid(rejection.body_text())
+    tracing::debug!(detail = %rejection.body_text(), "rejected query string");
+    Error::invalid("invalid query string")
 }

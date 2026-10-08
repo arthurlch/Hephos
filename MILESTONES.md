@@ -110,37 +110,49 @@ from, not a working release.
 
 ---
 
-## `0.0.2` — The real HTTP core
+## `0.0.2` — The real HTTP core ✅ (shipped)
 
-**Theme.** Make `Ctx` honest. This is the single most important next step.
+**Theme.** Make `Ctx` honest. This was the single most important next step.
 
-**Ship.**
-- Implement the standard middleware stack (the one fixed Tower stack `App` installs):
-  request-id injection → tracing span → timeout → body-size limit → per-request
-  `CancellationToken` (child of shutdown, fires on client disconnect) + default
-  `Identity` seed into extensions.
-- `Ctx::request_id` is real and matches the log span; `ctx.cancel_token()` fires on
-  disconnect and on shutdown.
-- Graceful shutdown hardening (drain in-flight, bounded drain deadline).
-- Finalize `Config` (addr, log format, timeout, body limit) — minimal, env-driven.
-- **Reconcile the limits with long-lived responses:** the request timeout and body
-  limit are **per-route-overridable defaults**, and streaming/SSE/WebSocket routes are
-  exempt from the request timeout (they get an idle timeout instead). Without this the
-  stack would kill every stream and block every large upload — a trap, not a guard.
-- **Un-pin the toolchain.** The `Cargo.lock` pins (uuid/time/url/…) are an environment
-  artifact of the 1.85 sandbox, not a design choice; set and CI-gate a real MSRV and
-  drop the pins.
+**Shipped.**
+- The standard middleware stack is implemented (`rivet-core::stack`) and installed by
+  `App::run` — fixed order, outermost→innermost: **observe** (request id + request span
+  + default `Identity` seed + `x-request-id` response header) → **timeout** → **body
+  limit** → **cancel** (per-request token) → per-route auth → handler.
+- `Ctx::request_id` is real and equals the span's id and the `x-request-id` header.
+- The per-request token is a **child of the shutdown token**: it fires on graceful
+  shutdown. On client disconnect the handler future / streaming body is dropped by the
+  runtime, which stops the work regardless. (Per-request token-on-disconnect wiring is
+  a `0.3` item — a naive drop-guard would wrongly kill SSE the instant the handler
+  returns.)
+- The request **timeout bounds response generation, not body streaming**, so SSE and
+  WebSocket handlers (which return their response immediately) are unaffected by
+  construction — verified: the streaming example streams for seconds under the default
+  30s timeout. Oversized bodies get `413`; slow handlers get `408`.
+- Graceful-shutdown hardening: tasks are cancelled, then drained with a bounded
+  deadline; task panics (`JoinError`) are logged, not swallowed.
+- `Config` finalized: `RIVET_ADDR`, `RIVET_LOG`, `RIVET_TIMEOUT_SECS`,
+  `RIVET_BODY_LIMIT` — env-driven, fully unit-tested.
+- Extractor rejections no longer leak raw deserializer text — fixed client message,
+  detail logged (security).
+- `TestClient` now wraps the **real** stack, with `with_stack(timeout, body_limit)` for
+  limit assertions and `post_json_with_token` / `TestResponse::{header, error_kind}`.
 
-**Explicitly not yet.** Per-route middleware customization beyond `authenticated` and
-the timeout/body overrides above; config files (env only).
+**Explicitly not yet.** Per-route timeout/body **overrides** and idle timeouts for
+long-lived connections (→ `0.3`, when file uploads and real-time maturity need them);
+config files (env only).
 
-**Acceptance.**
-- `TestClient` tests prove: a response carries a request id; a slow handler is cut
-  by the timeout; an oversized body is rejected; a dropped client cancels the
-  handler's `cancel_token`; middleware order is asserted.
-- `streaming`/`websocket` examples observably stop work on client disconnect.
+**Acceptance (met).** `rivet-core` stack tests prove: the response carries an
+`x-request-id` matching `ctx.request_id()`; identity is seeded `Anonymous`; a slow
+handler returns `408`; an oversized body returns `413`; in-limit requests succeed. The
+`streaming` example streams live under the default timeout (not killed).
 
-**Deps.** none new (tower-http already in tree).
+**Deferred from this milestone.** **Un-pin the toolchain** — the `Cargo.lock` pins
+(uuid/time/url/…) can't be dropped while the build toolchain is 1.85 (current latest
+transitive crates need rustc ≥1.87). Moves to a follow-up once the toolchain is bumped;
+MSRV stays 1.85 until then.
+
+**Deps.** none new (tower-http `timeout`/`limit` already in tree).
 
 ---
 
@@ -446,20 +458,20 @@ acceptance, **M** should land in its window, **L** opportunistic.
 
 **Pull-forward (these undermine *currently documented* contracts — fix as the
 relevant milestone opens, not later):** `From<sqlx::Error>` missing, `Db::migrate`
-no-op, extractor error leakage, the agent `stream`/`timeout` doc claims, and
-`rivet-mcp` discarding the tool instance.
+no-op, ~~extractor error leakage~~ (fixed in `0.0.2`), the agent `stream`/`timeout`
+doc claims, and `rivet-mcp` discarding the tool instance.
 
 ### `rivet-core`
 
 | Sev | Finding (location) | Fix | Target |
 | --- | --- | --- | --- |
-| H | `standard_stack` is an empty `Identity` — no timeout, body limit, request-id, or cancellation seed, so the documented DoS/leak/cancellation guarantees are absent (`app.rs:standard_stack`) | implement the fixed Tower stack | `0.0.2` |
-| M | Extractor rejections echo raw `rejection.body_text()` (field names, expected tokens) to clients (`extract.rs:map_json/path/query`) | return a fixed message, log the detail | `0.0.2` |
-| M | `Ctx` falls back to fresh uuid/never-firing token when extensions absent, hiding a missing-stack bug (`ctx.rs:from_request_parts`) | drop the `unwrap_or` fallbacks once the stack seeds extensions | `0.0.2` |
-| M | Background task panic/early-exit unobserved until drain (`app.rs:run`) | log task exit incl. `JoinError` when it happens | `0.0.2` |
-| H | No unit tests (Config parsing, Error status/kind/opacity, `nest("/")` panic) | add pure unit tests | `0.0.2` |
+| H | `standard_stack` was an empty `Identity` — no timeout, body limit, request-id, or cancellation seed | implemented the fixed Tower stack (`stack.rs`) | ✅ `0.0.2` |
+| M | Extractor rejections echoed raw `rejection.body_text()` to clients | fixed message + logged detail | ✅ `0.0.2` |
+| M | Background task panic/early-exit unobserved until drain | log task exit incl. `JoinError` + bounded drain deadline | ✅ `0.0.2` |
+| H | No unit tests (Config parsing, Error status/kind/opacity, `nest("/")` panic) | added unit + integration + stack tests | ✅ `0.0.2` |
+| M | `TestClient` lacked `post_json_with_token` / `error_kind()` | added, plus `with_stack` + `header()` | ✅ `0.0.2` |
+| L | `Ctx` keeps `unwrap_or` fallbacks for extensions (`ctx.rs:from_request_parts`) | intentionally retained — `Ctx::detached` (tasks/tests) has no extensions; the stack now always seeds the HTTP path | won't fix |
 | M | `authenticated`: strict `Bearer ` only, no token-length cap, `verify` non-401 errors pass through (`router.rs:authenticated`) | normalize scheme, cap length, force-map to 401 | `0.0.4` |
-| M | `TestClient` lacks `post_json_with_token` and an `error_kind()` helper (`test.rs`) | add them (canonical assertions in one call) | `0.1.0` |
 | M | Two ways to build `Internal` (`Error::internal` vs `From`), no context-wrapping (`error.rs`) | document/`.context()` to remove ambiguity | `0.1.0` |
 
 ### `rivet-db`

@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use tokio::net::TcpListener;
 use tokio::signal;
 use tokio_util::sync::CancellationToken;
@@ -6,7 +8,12 @@ use crate::config::{Config, LogFormat};
 use crate::ctx::Ctx;
 use crate::error::{Error, Result};
 use crate::router::Router;
+use crate::stack::{self, StackConfig};
 use crate::task::Task;
+
+/// How long to wait for background tasks to finish after shutdown is signalled
+/// before giving up on them.
+const DRAIN_DEADLINE: Duration = Duration::from_secs(10);
 
 /// The application. One per process. Built once in `main`, then `run`.
 ///
@@ -80,10 +87,11 @@ where
             }));
         }
 
-        let app = self
-            .router
-            .into_inner()
-            .layer(standard_stack(shutdown.clone()))
+        let stack_config = StackConfig {
+            timeout: config.timeout,
+            body_limit: config.body_limit,
+        };
+        let app = stack::apply(self.router.into_inner(), stack_config, shutdown.clone())
             .with_state(state);
 
         let listener = TcpListener::bind(config.addr)
@@ -104,27 +112,21 @@ where
             .await
             .map_err(|e| Error::internal(format!("serve: {e}")))?;
 
+        // Tasks were cancelled by the shutdown token; drain them with a deadline so a
+        // stuck task cannot wedge shutdown, and surface panics rather than swallowing.
         for handle in handles {
-            let _ = handle.await;
+            match tokio::time::timeout(DRAIN_DEADLINE, handle).await {
+                Ok(Ok(())) => {}
+                Ok(Err(join_error)) => {
+                    tracing::error!(error = %join_error, "background task panicked");
+                }
+                Err(_) => {
+                    tracing::warn!("background task did not finish within the drain deadline");
+                }
+            }
         }
         Ok(())
     }
-}
-
-/// The standard middleware stack, in fixed order, identical in every app. This
-/// is the only place cross-cutting HTTP behavior is configured.
-///
-/// BOUNDARY: shown as the intended composition. The concrete tower layers
-/// (request-id injection, tracing span, timeout, body limit, cancellation token
-/// propagation) are assembled here so application code never touches tower.
-fn standard_stack(_shutdown: CancellationToken) -> tower::layer::util::Identity {
-    // BOUNDARY: replace `Identity` with the composed tower stack:
-    //   RequestIdLayer -> TraceLayer -> TimeoutLayer -> RequestBodyLimitLayer
-    //   -> a layer that inserts a per-request CancellationToken (child of
-    //      `_shutdown`) and an `Identity` default into request extensions.
-    // Kept as `Identity` here so the crate's public shape compiles without the
-    // full wiring; see ARCHITECTURE.md § Request lifecycle.
-    tower::layer::util::Identity::new()
 }
 
 fn init_tracing(format: LogFormat) {

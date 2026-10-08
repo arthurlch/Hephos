@@ -5,12 +5,14 @@ This document explains **what** Rivet is and **why** it is shaped the way it is.
 `CONVENTIONS.md` is the mechanical reference. When any two disagree, the
 contradiction is a defect to be fixed, not a choice to be made.
 
-> A note on status: the `crates/` directory is the **API contract**. Trivial parts
-> are implemented; non-trivial subsystems are marked `// BOUNDARY:` with a precise
-> description of what remains. The `examples/` directory is written against this
-> contract and defines the intended usage. Nothing here is a fake API — every
-> signature is one a correct implementation can satisfy, and the boundaries say
-> exactly where implementation work remains. See `MILESTONES.md` for build order.
+> A note on status: the HTTP core is **implemented** as of `0.0.2` — the standard
+> middleware stack (request id, span, timeout, body limit, cancellation), graceful
+> shutdown, `Config`, and the `TestClient` harness are real and tested. The remaining
+> non-trivial subsystems are still marked `// BOUNDARY:` with a precise description of
+> what remains (`Db::migrate`, the model provider clients, agent tool dispatch, rmcp
+> serving). The `examples/` directory is written against this contract. Nothing here is
+> a fake API — every signature is one a correct implementation can satisfy, and the
+> boundaries say exactly where work remains. See `MILESTONES.md` for the build order.
 
 ---
 
@@ -180,28 +182,37 @@ TCP → Hyper → standard stack → Router → extractors → handler
                                    IntoResponse → status + JSON body → client
 ```
 
-The **standard middleware stack** is fixed and identical in every app, assembled
-once in `rivet-core`:
+The **standard middleware stack** is fixed and identical in every app, implemented
+once in `rivet-core::stack` and installed by `App::run`. In order, outermost to
+innermost:
 
-1. **Request id** — generate a UUID, insert into extensions, add to the span.
-2. **Trace** — a `tower_http` tracing span per request (method, path, id).
-3. **Timeout** — a ceiling on total request time.
-4. **Body limit** — a maximum request body size.
-5. **Context seed** — insert a per-request `CancellationToken` (child of the
-   shutdown token, also cancelled on client disconnect) and a default
-   `Identity::Anonymous` into extensions.
+1. **Observe** — generate a request-id UUID, insert it and a default
+   `Identity::Anonymous` into extensions, open a request span (method, path, id), and
+   echo the id back as the `x-request-id` response header for client/log correlation.
+2. **Timeout** — a ceiling on *response generation* (`tower_http::timeout`, `408` on
+   overrun). It bounds how long a handler may take to return its response, **not** body
+   streaming — so SSE/WebSocket handlers, which return immediately, are unaffected by
+   construction.
+3. **Body limit** — a maximum request body size (`tower_http::limit`, `413`).
+4. **Cancel** — insert a per-request `CancellationToken` that is a **child of the
+   shutdown token**, so a graceful shutdown cancels in-flight work. On client
+   disconnect the handler future and any streaming body are dropped by the runtime,
+   which stops the work regardless.
 
-Authentication is **not** in the standard stack. It is an app-level middleware
-that replaces the default `Identity` for routes that need it (see §16). This keeps
-the standard stack universal and auth opt-in per route group.
+Authentication is **not** in the standard stack. It is an app-level `route_layer`
+(so it runs only on matched routes — an unmatched path stays `404`, never `401`) that
+replaces the default `Identity` for the routes that need it (see §16). The observe
+layer runs outermost and seeds `Anonymous`; auth, applied inner on matched routes,
+overrides it.
 
-`Ctx` is produced by reading these extensions. Because the stack always runs, the
-extraction is infallible — `Ctx::from_request_parts` cannot reject. An agent never
-writes error handling for "failed to build context"; there is none.
+`Ctx` is produced by reading these extensions. Because the stack always runs on the
+HTTP path, extraction is infallible — `Ctx::from_request_parts` cannot reject.
+(`Ctx::detached`, used by tasks and tests, constructs the context directly.)
 
 **Why one fixed stack?** Middleware order is a classic source of subtle bugs
-(auth after logging, timeout inside body-limit, etc.). Fixing the order once, in
-the framework, removes a decision and a bug class from every app.
+(auth after logging, timeout inside body-limit, cancellation that kills streams).
+Fixing the order once, in the framework, removes a decision and a bug class from every
+app — and is covered by the `rivet-core` stack acceptance tests.
 
 ---
 
@@ -248,10 +259,13 @@ the HTTP contract, few enough variants to hold in mind.
   to the shutdown token. There is no detached `spawn` in application code; work
   that outlives a request is a `Task`, so it is always cancellable and always
   drained on shutdown.
-- **Cancellation:** `Ctx` carries a `CancellationToken`. Handlers get a token that
-  fires on client disconnect; tasks get the shutdown token. Loops select against
-  it. This makes cancellation a first-class, visible concern rather than an
-  afterthought.
+- **Cancellation:** `Ctx` carries a `CancellationToken` that is a child of the
+  process shutdown token, so it fires on graceful shutdown; tasks receive the shutdown
+  token directly. Loops select against it. On client disconnect the handler future and
+  any streaming body are dropped by the runtime, which stops the work regardless — so
+  disconnect is handled by Rust's drop semantics, and the token covers shutdown.
+  (Making the per-request token *also* fire on disconnect is a `0.3` refinement; a naive
+  drop-guard would wrongly cancel an SSE stream the instant the handler returned.)
 - **Backpressure & bounded concurrency:** fan-out uses bounded primitives
   (`buffered(N)`, `Semaphore`). Channels are bounded. The event bus has a fixed
   per-subscriber buffer and surfaces lag rather than growing without limit.

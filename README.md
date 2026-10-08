@@ -116,14 +116,18 @@ pattern and a copy-ready example.
 ## Status — pre-alpha scaffold
 
 Honest about where this is: the **doctrine, the public API contract, the reference
-examples, and the project tooling** are in place, and the REST path runs, serves, and
-is tested over HTTP. Core runtime subsystems (the middleware stack, DB migrations,
-model provider clients, agent tool dispatch, MCP serving) are still marked
-`// BOUNDARY:` — designed, contracted, not yet implemented.
+examples, and the project tooling** are in place. As of `0.0.2` the **HTTP core is
+real** — the standard middleware stack (request-id + `x-request-id`, tracing span,
+request timeout, body limit, shutdown-linked cancellation), graceful shutdown, a
+finalized `Config`, and the `TestClient` harness — all exercised by tests and by
+running the servers. The remaining runtime subsystems (DB migrations, model provider
+clients, agent tool dispatch, MCP serving) are still marked `// BOUNDARY:` — designed,
+contracted, not yet implemented.
 
-This is **not yet a functional `0.1.0`**; it is a consolidated base to build one from.
-The full, versioned path to a production-ready `1.0` — including a production-readiness
-definition-of-done — lives in [`MILESTONES.md`](./MILESTONES.md).
+This is **not yet a functional `0.1.0`**; it is a consolidated base being built toward
+one. The full, versioned path to a production-ready `1.0` — including a
+production-readiness definition-of-done and the risk register — lives in
+[`MILESTONES.md`](./MILESTONES.md).
 
 ## Quickstart
 
