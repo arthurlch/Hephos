@@ -1,6 +1,6 @@
 # example-rest
 
-The canonical Rivet application shape. Every other example mirrors this.
+The canonical Hephos application shape. Every other example mirrors this.
 
 Demonstrates: application startup, routing, path/query/JSON extraction, response
 types, the one error type, and the service layer — read-only, no database (that is
@@ -16,4 +16,4 @@ src/
   api/products.rs    HTTP handlers + routes().
 ```
 
-Run: `RIVET_ADDR=0.0.0.0:8080 cargo run -p example-rest`
+Run: `HEPHOS_ADDR=0.0.0.0:8080 cargo run -p example-rest`

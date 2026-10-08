@@ -1,4 +1,4 @@
-use rivet::prelude::*;
+use hephos::prelude::*;
 use uuid::Uuid;
 
 use crate::domain::user::User;

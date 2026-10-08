@@ -3,7 +3,7 @@ mod mcp;
 mod services;
 mod tools;
 
-use rivet::prelude::*;
+use hephos::prelude::*;
 
 #[tokio::main]
 async fn main() -> Result<()> {

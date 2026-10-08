@@ -1,4 +1,4 @@
-use rivet::test::TestClient;
+use hephos::test::TestClient;
 
 use crate::api;
 use crate::state::AppState;

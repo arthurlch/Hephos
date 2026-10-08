@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use rivet::agent::{Agent, Limits, Model};
+use hephos::agent::{Agent, Limits, Model};
 
 /// Build the reporting agent. Generic over `Model` so the same agent runs against
 /// the scripted model in tests and a real provider in production.

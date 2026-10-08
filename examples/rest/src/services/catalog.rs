@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use rivet::prelude::*;
+use hephos::prelude::*;
 use uuid::Uuid;
 
 use crate::domain::product::{ListQuery, Product, SearchRequest};
@@ -56,13 +56,13 @@ fn seed() -> Vec<Product> {
     vec![
         Product {
             id: Uuid::from_u128(1),
-            name: "Rivet Mug".into(),
+            name: "Hephos Mug".into(),
             category: "merch".into(),
             price_cents: 1500,
         },
         Product {
             id: Uuid::from_u128(2),
-            name: "Rivet T-Shirt".into(),
+            name: "Hephos T-Shirt".into(),
             category: "merch".into(),
             price_cents: 2500,
         },
@@ -114,6 +114,6 @@ mod tests {
         };
         let found = service.search(&ctx, request).await.unwrap();
         assert_eq!(found.len(), 1);
-        assert_eq!(found[0].name, "Rivet Mug");
+        assert_eq!(found[0].name, "Hephos Mug");
     }
 }

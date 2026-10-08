@@ -1,6 +1,6 @@
-# Contributing to Rivet
+# Contributing to Hephos
 
-Rivet is built for coding agents, so the contribution rules are the same whether a
+Hephos is built for coding agents, so the contribution rules are the same whether a
 human or an agent writes the change: follow the doctrine, copy the nearest example,
 and verify by running — not just compiling.
 
@@ -31,7 +31,7 @@ cargo build --all-features
 
 And — this is the lesson that shaped the testing doctrine — **compilation is not
 correctness.** If your change touches a route, handler, extractor, middleware, or
-anything the type checker cannot exercise, add a `rivet::test::TestClient` test for
+anything the type checker cannot exercise, add a `hephos::test::TestClient` test for
 it, or run the app and hit it. Do not infer success from a green build.
 
 The PR template checklist encodes the rest.

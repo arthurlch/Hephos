@@ -1,6 +1,6 @@
 # ARCHITECTURE.md
 
-This document explains **what** Rivet is and **why** it is shaped the way it is.
+This document explains **what** Hephos is and **why** it is shaped the way it is.
 `CLAUDE.md` tells you how to write code; this tells you why those rules exist.
 `CONVENTIONS.md` is the mechanical reference. When any two disagree, the
 contradiction is a defect to be fixed, not a choice to be made.
@@ -18,7 +18,7 @@ contradiction is a defect to be fixed, not a choice to be made.
 
 ## 1. Goal
 
-Rivet is a Rust backend framework whose primary user is a **coding agent**, not a
+Hephos is a Rust backend framework whose primary user is a **coding agent**, not a
 human. Humans read it too, and benefit, but every trade-off is resolved in favor
 of what makes an autonomous agent correct and fast.
 
@@ -26,7 +26,7 @@ An agent builds software by pattern-matching a repository: it reads existing cod
 infers the conventions, and produces more code in the same shape. An agent is at
 its best when the repository is **regular** — when the same kind of thing always
 looks the same — and at its worst when it must choose between several valid
-approaches. Rivet is engineered to maximize regularity and minimize choice.
+approaches. Hephos is engineered to maximize regularity and minimize choice.
 
 Concretely, the framework optimizes, in priority order: agent readability,
 predictability, consistency, a small API surface, strong typing, Rust safety,
@@ -34,18 +34,18 @@ production performance, security, explicit behavior, and minimal configuration.
 
 The design rule that follows from this: **coherence over flexibility, simplicity
 over abstraction, agent predictability over human preference.** Where a more
-flexible design would introduce a second valid way to do something, Rivet chooses
+flexible design would introduce a second valid way to do something, Hephos chooses
 the single way.
 
 ---
 
-## 2. What Rivet is not
+## 2. What Hephos is not
 
 - Not a general-purpose web framework. It is narrower and more opinionated than
   Axum or Actix by design.
 - Not an AI SDK with HTTP bolted on, nor an LLM wrapper. The agent layer is one
   capability among several, built on the same primitives as the rest.
-- Not a new runtime, HTTP stack, or serialization format. Rivet builds **above**
+- Not a new runtime, HTTP stack, or serialization format. Hephos builds **above**
   Tokio, Hyper, Tower, Axum, and Serde; it adds value as an application layer, not
   as infrastructure.
 - Not a plugin platform. There is no plugin system, no DI container, no
@@ -56,10 +56,10 @@ the single way.
 
 ## 3. Boundaries
 
-Rivet draws a hard line between **infrastructure it reuses** and **the application
+Hephos draws a hard line between **infrastructure it reuses** and **the application
 layer it owns**.
 
-| Concern | Owned by | Rivet's role |
+| Concern | Owned by | Hephos's role |
 | --- | --- | --- |
 | async runtime | Tokio | reuse directly |
 | HTTP/1+2 | Hyper (via Axum) | reuse directly |
@@ -71,14 +71,14 @@ layer it owns**.
 | MCP | rmcp | wrap tool exposure; reuse the protocol impl |
 | error ergonomics | thiserror/anyhow | build the one `Error` type on top |
 
-Rivet owns: the application object (`App`), the request context (`Ctx`), the one
+Hephos owns: the application object (`App`), the request context (`Ctx`), the one
 error type (`Error`), the constrained router, the typed extractors, the task and
 event model, and the agent/tool/workflow/MCP application patterns.
 
 **Why wrap Axum instead of exposing it?** Axum is excellent and flexible — it has
 many extractors, several response conventions, and multiple routing styles. That
 flexibility is exactly what hurts an agent: it multiplies the number of valid ways
-to write a handler. Rivet exposes one extractor pattern (`Ctx` + `Json`/`Path`/
+to write a handler. Hephos exposes one extractor pattern (`Ctx` + `Json`/`Path`/
 `Query`), one response convention (`Result<Json<T>>`), and one routing style
 (`router.get(path, handler)`). The full power of Axum remains underneath for the
 framework's own use; it is not part of the surface an agent must learn.
@@ -93,17 +93,17 @@ without a database never sees `Db`.
 
 ```
 crates/
-  rivet         meta: prelude + feature-gated re-exports (db, agent, mcp, full)
-  rivet-core    App, Ctx, Error, Router, extractors, Config, Task, Events
-  rivet-db      Db, Tx over SQLx/Postgres
-  rivet-agent   Model, Agent, Tool, structured output, streaming
-  rivet-mcp     rmcp integration
+  hephos         meta: prelude + feature-gated re-exports (db, agent, mcp, full)
+  hephos-core    App, Ctx, Error, Router, extractors, Config, Task, Events
+  hephos-db      Db, Tx over SQLx/Postgres
+  hephos-agent   Model, Agent, Tool, structured output, streaming
+  hephos-mcp     rmcp integration
 ```
 
-`rivet-core` has no knowledge of databases, models, or MCP. `rivet-agent` is
+`hephos-core` has no knowledge of databases, models, or MCP. `hephos-agent` is
 state-agnostic — it does not know your `AppState`. These are deliberate
 dependency cuts: each crate is small enough to understand completely, and the
-dependency graph is a DAG with `rivet-core` at the root.
+dependency graph is a DAG with `hephos-core` at the root.
 
 **Why not one crate?** A monolith would force every app to compile the agent and
 MCP machinery even for a plain REST service, and would blur the boundaries that
@@ -120,7 +120,7 @@ There is exactly one `App`, built in `main` and run:
 
 ```rust
 #[tokio::main]
-async fn main() -> rivet::Result<()> {
+async fn main() -> hephos::Result<()> {
     let state = AppState::init().await?;
     App::new(state)
         .routes(api::routes())
@@ -183,7 +183,7 @@ TCP → Hyper → standard stack → Router → extractors → handler
 ```
 
 The **standard middleware stack** is fixed and identical in every app, implemented
-once in `rivet-core::stack` and installed by `App::run`. In order, outermost to
+once in `hephos-core::stack` and installed by `App::run`. In order, outermost to
 innermost:
 
 1. **Observe** — generate a request-id UUID, insert it and a default
@@ -212,13 +212,13 @@ HTTP path, extraction is infallible — `Ctx::from_request_parts` cannot reject.
 **Why one fixed stack?** Middleware order is a classic source of subtle bugs
 (auth after logging, timeout inside body-limit, cancellation that kills streams).
 Fixing the order once, in the framework, removes a decision and a bug class from every
-app — and is covered by the `rivet-core` stack acceptance tests.
+app — and is covered by the `hephos-core` stack acceptance tests.
 
 ---
 
 ## 7. Error architecture
 
-One type, `rivet::Error`, used by every layer. It is a small enum whose variants
+One type, `hephos::Error`, used by every layer. It is a small enum whose variants
 map one-to-one to HTTP statuses, plus an `Internal(anyhow::Error)` escape hatch.
 
 ```
@@ -232,7 +232,7 @@ Design decisions and their reasons:
 - **One type, not per-module enums.** An agent reasoning about error handling has
   exactly one type to understand. Error conversion is never a design question.
 - **Variants are HTTP-shaped, but services never import HTTP.** The mapping to
-  status lives in `IntoResponse`, in `rivet-core`. A service returns
+  status lives in `IntoResponse`, in `hephos-core`. A service returns
   `Error::not_found("user")` and stays ignorant of the number 404.
 - **`Internal` is opaque to clients, verbose to operators.** Its full cause chain
   is logged via tracing; the response body is a generic message. This is a
@@ -253,7 +253,7 @@ the HTTP contract, few enough variants to hold in mind.
 
 ## 8. Async & concurrency model
 
-- **Runtime:** Tokio multi-threaded. Rivet does not expose runtime configuration
+- **Runtime:** Tokio multi-threaded. Hephos does not expose runtime configuration
   beyond what `#[tokio::main]` gives; there is one runtime per process.
 - **Structured concurrency:** background work is owned by `App` as `Task`s, tied
   to the shutdown token. There is no detached `spawn` in application code; work
@@ -273,7 +273,7 @@ the HTTP contract, few enough variants to hold in mind.
   clients, agent runs) each carry their own. No unbounded await on the network.
 
 **Why native async traits (not `async-trait`)?** On edition 2024 / Rust 1.85,
-`async fn` in traits and RPITIT are stable. Rivet uses them directly
+`async fn` in traits and RPITIT are stable. Hephos uses them directly
 (`fn run(&self, ...) -> impl Future<...> + Send`). This avoids the `async-trait`
 macro's boxing and keeps trait definitions readable — an agent sees a normal async
 signature, not a macro expansion. The one place a boxed future is used
@@ -284,20 +284,20 @@ contained erasure, not a blanket policy.
 
 ## 9. Transport & API architecture
 
-Rivet treats REST as the default and RPC as a thin discipline on top of the same
+Hephos treats REST as the default and RPC as a thin discipline on top of the same
 machinery, rather than a separate subsystem.
 
 ### 9.1 REST
 
-The canonical transport. Handlers are Axum handlers constrained to the Rivet
+The canonical transport. Handlers are Axum handlers constrained to the Hephos
 shape. Routing is verb-first (`router.post("/users", users::create)`). Path params
 use Axum 0.8 brace syntax (`/users/{id}`). This is the fully supported path today.
 
 ### 9.2 RPC
 
-RPC in Rivet is **not a second framework** — it is a convention over REST:
+RPC in Hephos is **not a second framework** — it is a convention over REST:
 `POST /rpc/{method}` with a `Json<Request>` body and a `Json<Response>` reply,
-handlers living in `api/` like any other. Rivet does not ship code generation or a
+handlers living in `api/` like any other. Hephos does not ship code generation or a
 schema language in v1; that is a deliberate deferral (see `MILESTONES.md`). Choosing
 one HTTP-shaped RPC convention over a bespoke protocol keeps the surface an agent
 must learn to zero beyond REST.
@@ -329,7 +329,7 @@ cancellable stream of items rendered to the client."
 
 A `Task` is a long-lived unit of work owned by `App`. It implements one method,
 `run(ctx)`, and runs until the shutdown token fires. Scheduled work is a task that
-drives a `tokio::time::interval` inside its loop. Rivet deliberately ships **no
+drives a `tokio::time::interval` inside its loop. Hephos deliberately ships **no
 cron engine** — the interval-loop pattern covers the overwhelming majority of
 needs and is fully visible in the code. Durable, distributed scheduling is a
 future, additive concern, explicitly out of scope for v1 (see `MILESTONES.md`).
@@ -373,7 +373,7 @@ The agent layer is a thin, state-agnostic application of the same primitives.
 - **`Model`** — the provider abstraction. Two methods: `complete` and `stream`.
   Providers are thin `reqwest` clients (`providers::Anthropic`, etc.). Keeping the
   trait to two methods means every provider implementation is small and obviously
-  correct. (Prior art: Rig generalizes across 20+ providers; Rivet deliberately
+  correct. (Prior art: Rig generalizes across 20+ providers; Hephos deliberately
   keeps the trait minimal and provider count small, favoring predictability over
   breadth.)
 - **`Tool`** — a strongly typed capability. `type Input: DeserializeOwned +
@@ -388,7 +388,7 @@ The agent layer is a thin, state-agnostic application of the same primitives.
 - **`Limits`** — every run is bounded by max turns, max tokens, and a timeout.
   There is no unbounded agent loop; overrun is an explicit error.
 
-**State-agnostic by design.** `rivet-agent` does not know `AppState`. A tool
+**State-agnostic by design.** `hephos-agent` does not know `AppState`. A tool
 captures its dependencies (`Db`, a service, the caller's identity) at construction,
 inside a handler that already holds `Ctx`. So authorization is done where the
 identity is known, and the agent layer stays free of application generics. This is
@@ -399,7 +399,7 @@ or task, under the same tracing span and cancellation token as everything else.
 Dropping a `stream` cancels generation.
 
 **BOUNDARY:** provider HTTP clients, the vendor-specific encoding of tool calls,
-and the structured-output enforcement are marked in `crates/rivet-agent`. The
+and the structured-output enforcement are marked in `crates/hephos-agent`. The
 trait contracts and the turn-loop algorithm are fixed; the vendor wiring is the
 remaining work.
 
@@ -428,7 +428,7 @@ ordinary Rust: a struct with a `run(ctx, input) -> Result<Output>` method whose
 body calls services and agents in sequence, with explicit state, explicit failure
 handling, and explicit cancellation points. Steps are private methods.
 
-Rivet v1 does **not** ship a durable workflow engine (no event-sourced replay, no
+Hephos v1 does **not** ship a durable workflow engine (no event-sourced replay, no
 distributed saga runtime). That is the correct deferral: durable execution is a
 large stateful subsystem, and most workflows are a bounded sequence of steps that
 a plain async function expresses more legibly than a DSL. The architecture marks
@@ -444,15 +444,15 @@ the function wins on legibility.
 
 ## 15. MCP integration
 
-Rivet uses **rmcp**, the official Rust MCP SDK, rather than defining a protocol.
-`rivet-mcp` turns a Rivet `Tool` into an MCP tool and runs an rmcp server over
+Hephos uses **rmcp**, the official Rust MCP SDK, rather than defining a protocol.
+`hephos-mcp` turns a Hephos `Tool` into an MCP tool and runs an rmcp server over
 stdio (local) or Streamable HTTP (networked — the current MCP transport, which
 replaced the deprecated HTTP+SSE transport). Resources and prompts, where an app
 needs them, are exposed through rmcp directly.
 
 **Why reuse rmcp?** The protocol is a moving target maintained by the MCP project;
-reimplementing it would be both wasted effort and a correctness risk. Rivet's value
-is that a tool written once in the Rivet shape is reachable by local agents and
+reimplementing it would be both wasted effort and a correctness risk. Hephos's value
+is that a tool written once in the Hephos shape is reachable by local agents and
 external MCP clients alike.
 
 ---
@@ -467,7 +467,7 @@ external MCP clients alike.
   `ctx.require_role("admin")?`, which return the narrowest correct error (401 vs
   403). Fine-grained checks (ownership of a resource) are service-layer decisions,
   expressed as `Error::Forbidden`.
-- **Passwords** are hashed with `argon2`. Login issues a signed token; Rivet does
+- **Passwords** are hashed with `argon2`. Login issues a signed token; Hephos does
   not store sessions server-side in v1 (stateless tokens), with a revocation list
   as a future addition if needed.
 
@@ -518,8 +518,8 @@ derived from).
 
 ## 19. Configuration & secrets
 
-Minimal and decentralized by ownership. `rivet-core::Config` reads only the two
-things the framework needs (`RIVET_ADDR`, `RIVET_LOG`). Each component reads its
+Minimal and decentralized by ownership. `hephos-core::Config` reads only the two
+things the framework needs (`HEPHOS_ADDR`, `HEPHOS_LOG`). Each component reads its
 own config from the environment where it is constructed (`Db` reads
 `DATABASE_URL`; a provider reads `ANTHROPIC_API_KEY`). There is no central config
 object threaded through the app. Secrets live in the environment, are never logged,
@@ -553,7 +553,7 @@ Testing is a **first-class framework capability**, not an afterthought — becau
 framework optimized for agents must make its correctness checkable the same
 uniform way everywhere, and because compilation alone proves nothing about wiring.
 
-- **`rivet::test::TestClient`** is the canonical harness. It drives the real
+- **`hephos::test::TestClient`** is the canonical harness. It drives the real
   [`Router`] — the same routes, extractors, and middleware the app serves — in
   memory, without a socket. It is shipped as part of the framework so there is one
   obvious way to test an app's HTTP surface, and so the test exercises the actual
@@ -615,7 +615,7 @@ An agent, following the doctrine, knows: the route goes in `api/users.rs` as
 so the handler calls `ctx.require_role("admin")?`; it calls
 `ctx.state().users.create(&ctx, input)`; the service opens a `Tx`, calls
 `UserRepo::create`, emits `AppEvent::UserCreated`, commits; the error type is
-`rivet::Error` throughout; tests go in `services/users.rs` (unit) and `tests/`
+`hephos::Error` throughout; tests go in `services/users.rs` (unit) and `tests/`
 (integration). Every decision is determined by the conventions — none is guessed.
 This flow is realized in `examples/database` + `examples/auth`.
 

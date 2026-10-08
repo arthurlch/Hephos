@@ -1,11 +1,11 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/rivet",
-    "crates/rivet-core",
-    "crates/rivet-db",
-    "crates/rivet-agent",
-    "crates/rivet-mcp",
+    "crates/hephos",
+    "crates/hephos-core",
+    "crates/hephos-db",
+    "crates/hephos-agent",
+    "crates/hephos-mcp",
     "examples/rest",
     "examples/auth",
     "examples/database",
@@ -21,16 +21,16 @@ members = [
 edition = "2024"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/arthurlch/rivet"
+repository = "https://github.com/arthurlch/hephos"
 
 # One pinned version per dependency, declared once, inherited everywhere.
 # Adding a dependency here is a deliberate, reviewed act (see CONVENTIONS.md).
 [workspace.dependencies]
-rivet = { path = "crates/rivet" }
-rivet-core = { path = "crates/rivet-core" }
-rivet-db = { path = "crates/rivet-db" }
-rivet-agent = { path = "crates/rivet-agent" }
-rivet-mcp = { path = "crates/rivet-mcp" }
+hephos = { path = "crates/hephos" }
+hephos-core = { path = "crates/hephos-core" }
+hephos-db = { path = "crates/hephos-db" }
+hephos-agent = { path = "crates/hephos-agent" }
+hephos-mcp = { path = "crates/hephos-mcp" }
 
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync", "time", "net"] }
 tokio-util = { version = "0.7", features = ["rt"] }
@@ -62,6 +62,11 @@ async-stream = "0.3"
 
 # mcp
 rmcp = { version = "0.9", features = ["server", "transport-io", "transport-streamable-http-server"] }
+
+# Faster edit→check→test loop for agents: line-tables-only debuginfo links much
+# faster than full debuginfo while keeping backtraces and line numbers.
+[profile.dev]
+debug = "line-tables-only"
 
 [profile.release]
 lto = "thin"

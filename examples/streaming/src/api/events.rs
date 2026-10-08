@@ -2,8 +2,8 @@ use std::convert::Infallible;
 use std::time::Duration;
 
 use futures::Stream;
-use rivet::prelude::*;
-use rivet::sse::{Event, KeepAlive, Sse};
+use hephos::prelude::*;
+use hephos::sse::{Event, KeepAlive, Sse};
 
 use crate::state::{AppState, Ctx};
 

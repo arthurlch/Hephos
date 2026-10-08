@@ -14,6 +14,6 @@ src/
 
 Authorization is done inside `call`: the tool captures the caller's `Identity`
 when constructed and requires the `support` role. Validation (non-empty query) is
-also inside `call`. Both surface `rivet::Error`.
+also inside `call`. Both surface `hephos::Error`.
 
 Run: `cargo run -p example-tools`

@@ -4,7 +4,7 @@
 //! they are `#[ignore]` until migrations land — run with
 //! `DATABASE_URL=… JWT_SECRET=… cargo test -p example-auth -- --ignored`.
 
-use rivet::test::TestClient;
+use hephos::test::TestClient;
 use serde_json::{Value, json};
 
 use crate::api;

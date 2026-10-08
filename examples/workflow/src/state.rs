@@ -1,8 +1,8 @@
-use rivet::prelude::*;
+use hephos::prelude::*;
 
 use crate::services::accounts::AccountService;
 
-pub type Ctx = rivet::Ctx<AppState>;
+pub type Ctx = hephos::Ctx<AppState>;
 
 #[derive(Clone)]
 pub struct AppState {

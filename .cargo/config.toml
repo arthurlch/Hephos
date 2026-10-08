@@ -1,0 +1,27 @@
+# Cargo configuration — tuned for the agent feedback loop.
+#
+# For a coding agent, iteration speed IS `cargo check` speed. The fastest safe win
+# is a faster linker; it is left opt-in (not forced) so a clean checkout always
+# builds, even without the linker installed. Install the linker, then uncomment the
+# block for your platform.
+
+[alias]
+# The agent feedback loop: type-check first (≈5–10× faster than build/test), only
+# then run targeted tests. See CLAUDE.md § Compiler feedback.
+ck = "check --workspace --all-features"
+lint = "clippy --all-targets --all-features -- -D warnings"
+
+# --- Opt-in faster linkers (uncomment after installing the tool) ---------------
+#
+# Linux (install: `apt-get install lld clang` or `mold`):
+# [target.x86_64-unknown-linux-gnu]
+# linker = "clang"
+# rustflags = ["-C", "link-arg=-fuse-ld=lld"]
+#
+# macOS (install: `brew install llvm`); Apple's default linker is already decent:
+# [target.aarch64-apple-darwin]
+# rustflags = ["-C", "link-arg=-fuse-ld=lld"]
+#
+# Optional compile cache across checkouts (install: `cargo install sccache`):
+# [build]
+# rustc-wrapper = "sccache"

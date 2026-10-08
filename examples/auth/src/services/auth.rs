@@ -3,7 +3,7 @@ use std::sync::{Arc, OnceLock};
 use argon2::password_hash::SaltString;
 use argon2::password_hash::rand_core::OsRng;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
-use rivet::prelude::*;
+use hephos::prelude::*;
 
 use crate::domain::user::{Credentials, TokenResponse, User};
 use crate::repos::users::UserRepo;
@@ -89,6 +89,6 @@ fn verify_password(password: &str, hash: &str) -> bool {
 fn decoy_hash() -> &'static str {
     static DECOY: OnceLock<String> = OnceLock::new();
     DECOY
-        .get_or_init(|| hash_password("rivet-timing-equalizer").expect("decoy hash is valid"))
+        .get_or_init(|| hash_password("hephos-timing-equalizer").expect("decoy hash is valid"))
         .as_str()
 }

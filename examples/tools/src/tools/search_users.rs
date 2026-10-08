@@ -1,4 +1,4 @@
-use rivet::prelude::*;
+use hephos::prelude::*;
 
 use crate::domain::user::{SearchQuery, UserSummary};
 use crate::services::directory::Directory;

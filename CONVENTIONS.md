@@ -12,7 +12,7 @@ there is no other acceptable shape.
 ## 1. Naming
 
 ### 1.1 Crates & packages
-- Framework crates: `rivet`, `rivet-core`, `rivet-<capability>` (kebab-case).
+- Framework crates: `hephos`, `hephos-core`, `hephos-<capability>` (kebab-case).
 - Example/app crates: the app name, kebab-case.
 
 ### 1.2 Modules & files
@@ -55,7 +55,7 @@ there is no other acceptable shape.
   `DESCRIPTION`.
 
 ### 1.7 Errors
-- There is one error type, `rivet::Error`. No app-defined error types. No `Error`
+- There is one error type, `hephos::Error`. No app-defined error types. No `Error`
   suffix proliferation.
 
 ### 1.8 Endpoints
@@ -82,13 +82,13 @@ there is no other acceptable shape.
 ### 2.1 `state.rs` (every app has exactly one)
 
 ```rust
-use rivet::prelude::*;
-use rivet::db::Db;
+use hephos::prelude::*;
+use hephos::db::Db;
 use uuid::Uuid;
 
 use crate::services::users::UserService;
 
-pub type Ctx = rivet::Ctx<AppState>;
+pub type Ctx = hephos::Ctx<AppState>;
 
 #[derive(Debug, Clone)]
 pub enum AppEvent {
@@ -117,7 +117,7 @@ impl AppState {
 ### 2.2 REST endpoint (`api/users.rs`)
 
 ```rust
-use rivet::prelude::*;
+use hephos::prelude::*;
 
 use crate::domain::user::{CreateUser, User};
 use crate::state::Ctx;
@@ -152,8 +152,8 @@ pub fn routes() -> Router<crate::state::AppState> {
 ### 2.3 Service (`services/users.rs`)
 
 ```rust
-use rivet::prelude::*;
-use rivet::db::Db;
+use hephos::prelude::*;
+use hephos::db::Db;
 use uuid::Uuid;
 
 use crate::domain::user::{CreateUser, User};
@@ -193,7 +193,7 @@ impl UserService {
 ### 2.4 Repository (`repos/users.rs`)
 
 ```rust
-use rivet::prelude::*;
+use hephos::prelude::*;
 use sqlx::PgExecutor;
 use uuid::Uuid;
 
@@ -270,7 +270,7 @@ async fn authenticate(/* headers, next */) {
 
 ```rust
 use std::time::Duration;
-use rivet::prelude::*;
+use hephos::prelude::*;
 use crate::state::AppState;
 
 pub struct OutboxDrain;
@@ -299,7 +299,7 @@ impl Task<AppState> for OutboxDrain {
 
 ```rust
 // Registered as a Task that owns a broadcast receiver and matches AppEvent.
-use rivet::prelude::*;
+use hephos::prelude::*;
 use crate::state::{AppEvent, AppState};
 
 pub struct AuditLog;
@@ -326,8 +326,8 @@ impl Task<AppState> for AuditLog {
 ### 2.9 Tool (`tools/search_users.rs`)
 
 ```rust
-use rivet::prelude::*;
-use rivet::db::Db;
+use hephos::prelude::*;
+use hephos::db::Db;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -364,13 +364,13 @@ impl Tool for SearchUsers {
 ### 2.10 Agent (`agents/support.rs`)
 
 ```rust
-use rivet::prelude::*;
-use rivet::agent::{Agent, Limits};
-use rivet::agent::providers::Anthropic;
+use hephos::prelude::*;
+use hephos::agent::{Agent, Limits};
+use hephos::agent::providers::Anthropic;
 
 use crate::tools::search_users::SearchUsers;
 
-pub fn support(db: rivet::db::Db) -> Result<Agent<Anthropic>> {
+pub fn support(db: hephos::db::Db) -> Result<Agent<Anthropic>> {
     let model = Anthropic::from_env("claude-opus-4-8")?;
     Ok(Agent::new(model)
         .system("You help support staff find and summarize user accounts.")
@@ -382,7 +382,7 @@ pub fn support(db: rivet::db::Db) -> Result<Agent<Anthropic>> {
 ### 2.11 Workflow (`workflows/onboarding.rs`)
 
 ```rust
-use rivet::prelude::*;
+use hephos::prelude::*;
 use crate::domain::user::CreateUser;
 use crate::state::{AppState, Ctx};
 
@@ -413,11 +413,11 @@ cancellation is inherited from `ctx`.
 ### 2.12 MCP server (`mcp/server.rs`)
 
 ```rust
-use rivet::prelude::*;
-use rivet::mcp::McpServer;
+use hephos::prelude::*;
+use hephos::mcp::McpServer;
 use crate::tools::search_users::SearchUsers;
 
-pub async fn serve(db: rivet::db::Db) -> Result<()> {
+pub async fn serve(db: hephos::db::Db) -> Result<()> {
     McpServer::new()
         .tool(SearchUsers::new(db))
         .serve_stdio()
@@ -491,11 +491,11 @@ uses `tests/` as usual.
 
 ### 5.1 The canonical HTTP-surface test
 
-Drive the real router with `rivet::test::TestClient` — same routes and middleware
+Drive the real router with `hephos::test::TestClient` — same routes and middleware
 the app serves. Every app includes a `routes_build` canary.
 
 ```rust
-use rivet::test::TestClient;
+use hephos::test::TestClient;
 use serde_json::{json, Value};
 
 use crate::{api, state::AppState};

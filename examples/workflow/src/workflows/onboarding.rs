@@ -1,4 +1,4 @@
-use rivet::prelude::*;
+use hephos::prelude::*;
 
 use crate::agents::welcome;
 use crate::domain::account::{Account, NewAccount, Onboarded};

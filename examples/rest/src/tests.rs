@@ -1,8 +1,8 @@
-//! HTTP-surface tests. These drive the real router through `rivet::test`, so they
+//! HTTP-surface tests. These drive the real router through `hephos::test`, so they
 //! exercise route composition, extraction, and the error model — the wiring that
 //! unit tests on services never touch.
 
-use rivet::test::TestClient;
+use hephos::test::TestClient;
 use serde_json::{Value, json};
 
 use crate::api;

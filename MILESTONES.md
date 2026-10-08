@@ -1,4 +1,4 @@
-# MILESTONES.md — the road to Rivet 1.0
+# MILESTONES.md — the road to Hephos 1.0
 
 This is the long-term plan: every version from today's `0.0.1` scaffold to a
 production-ready, API-stable `1.0.0`, roughly a year of work. It replaces the old
@@ -16,20 +16,20 @@ Read this with the doctrine: `CLAUDE.md` (rules), `ARCHITECTURE.md` (why),
 > **The backend framework built only for coding agents.** If a coding agent can
 > understand the framework, it can build the application.
 
-Production-ready, for Rivet, means a coding agent can build, test, observe, secure,
+Production-ready, for Hephos, means a coding agent can build, test, observe, secure,
 and operate a real backend — REST + DB + auth + background work + agents — by
 copying one canonical pattern per task, and a human can run it at scale with
 confidence. Every milestone below is judged against that, not against feature count.
 
-## What Rivet adds above the ecosystem (and must keep adding)
+## What Hephos adds above the ecosystem (and must keep adding)
 
-Rivet does not ship a new runtime, HTTP stack, or serialization format. It is a thin,
+Hephos does not ship a new runtime, HTTP stack, or serialization format. It is a thin,
 coherent application layer **above** the best of the Rust ecosystem, and its value
 lives there. "Thin" is not "small value" — the layer is the product: the opinions,
 guard-rails, wiring, and tests that turn excellent primitives into a backend an agent
 gets right the first time and a human can operate.
 
-| Concern | Reused | What Rivet adds on top |
+| Concern | Reused | What Hephos adds on top |
 | --- | --- | --- |
 | async runtime | Tokio | structured lifecycle: graceful drain; cancellation that reaches every handler, task, and agent; no detached, unowned work |
 | HTTP / routing | Hyper + Axum | one verb-first router, one handler shape, a typed `Ctx` extractor; nesting at `/` is a clear error, not a late panic |
@@ -39,9 +39,9 @@ gets right the first time and a human can operate.
 | observability | tracing | one span tree from route → service → repo → agent → tool; OTLP logs/metrics (roadmap) |
 | agents / MCP | rmcp | one strongly-typed `Tool` (derived schema + validation + authz) reachable by an in-process agent **and** external MCP clients; every run bounded |
 | errors | thiserror / anyhow | **one** `Error` for every layer; variants map to status; internals logged in full but returned opaque — secure by default |
-| testing | — (pure Rivet) | `rivet::test::TestClient` drives the **real** router in-memory; a mandatory `routes_build` canary |
+| testing | — (pure Hephos) | `hephos::test::TestClient` drives the **real** router in-memory; a mandatory `routes_build` canary |
 
-**This is a roadmap commitment, not just a description.** The reason to choose Rivet
+**This is a roadmap commitment, not just a description.** The reason to choose Hephos
 over assembling Tokio + Axum + SQLx + rmcp yourself is the value in that right-hand
 column — so every milestone must *deepen* it, not merely add surface. A feature that
 adds capability without adding a canonical shape, a guard-rail, a test seam, or an
@@ -56,7 +56,7 @@ multiplier); `0.5`–`0.7` the agent value (cost, guardrails, durability, memory
 These are the load-bearing walls. A change that violates one is wrong, regardless
 of what it adds.
 
-1. **One error type** (`rivet::Error`) across every layer.
+1. **One error type** (`hephos::Error`) across every layer.
 2. **`ctx: Ctx` first** on every handler/task/tool; state only via `ctx.state()`.
 3. **Strict layering**: `api → services → repos → db`; handlers never touch SQL,
    services never import HTTP.
@@ -99,9 +99,9 @@ public surface under SemVer.
 **Theme.** Doctrine, API contract, reference examples, project tooling.
 
 - Doctrine: `CLAUDE.md`, `ARCHITECTURE.md`, `CONVENTIONS.md`.
-- API contract crates: `rivet-core`, `rivet-db`, `rivet-agent`, `rivet-mcp`, `rivet`.
+- API contract crates: `hephos-core`, `hephos-db`, `hephos-agent`, `hephos-mcp`, `hephos`.
 - Nine reference examples; the REST path runs and is tested over HTTP.
-- `rivet::test::TestClient`; the `routes_build` canary.
+- `hephos::test::TestClient`; the `routes_build` canary.
 - Tooling: CI (offline + Postgres + cargo-deny), `.gitignore`, dual license,
   `rustfmt.toml`, `deny.toml`, `Makefile`, Dependabot, PR template, CONTRIBUTING.
 
@@ -115,7 +115,7 @@ from, not a working release.
 **Theme.** Make `Ctx` honest. This was the single most important next step.
 
 **Shipped.**
-- The standard middleware stack is implemented (`rivet-core::stack`) and installed by
+- The standard middleware stack is implemented (`hephos-core::stack`) and installed by
   `App::run` — fixed order, outermost→innermost: **observe** (request id + request span
   + default `Identity` seed + `x-request-id` response header) → **timeout** → **body
   limit** → **cancel** (per-request token) → per-route auth → handler.
@@ -131,8 +131,8 @@ from, not a working release.
   30s timeout. Oversized bodies get `413`; slow handlers get `408`.
 - Graceful-shutdown hardening: tasks are cancelled, then drained with a bounded
   deadline; task panics (`JoinError`) are logged, not swallowed.
-- `Config` finalized: `RIVET_ADDR`, `RIVET_LOG`, `RIVET_TIMEOUT_SECS`,
-  `RIVET_BODY_LIMIT` — env-driven, fully unit-tested.
+- `Config` finalized: `HEPHOS_ADDR`, `HEPHOS_LOG`, `HEPHOS_TIMEOUT_SECS`,
+  `HEPHOS_BODY_LIMIT` — env-driven, fully unit-tested.
 - Extractor rejections no longer leak raw deserializer text — fixed client message,
   detail logged (security).
 - `TestClient` now wraps the **real** stack, with `with_stack(timeout, body_limit)` for
@@ -142,7 +142,7 @@ from, not a working release.
 long-lived connections (→ `0.3`, when file uploads and real-time maturity need them);
 config files (env only).
 
-**Acceptance (met).** `rivet-core` stack tests prove: the response carries an
+**Acceptance (met).** `hephos-core` stack tests prove: the response carries an
 `x-request-id` matching `ctx.request_id()`; identity is seeded `Anonymous`; a slow
 handler returns `408`; an oversized body returns `413`; in-limit requests succeed. The
 `streaming` example streams live under the default timeout (not killed).
@@ -165,7 +165,7 @@ MSRV stays 1.85 until then.
   migrations run on startup and in tests.
 - Pool configuration (size, acquire timeout, statement timeout) via env.
 - Transaction ergonomics finalized; repository pattern battle-tested.
-- Test fixtures in `rivet::test`: a rolled-back-transaction helper and a
+- Test fixtures in `hephos::test`: a rolled-back-transaction helper and a
   per-test disposable-database helper.
 - `database` + `auth` examples run green in the CI Postgres job (not `#[ignore]`d).
 
@@ -211,7 +211,7 @@ headers asserted.
 
 ## `0.1.0` — First coherent backend release
 
-**Theme.** "You can build a real REST + DB + auth backend with Rivet."
+**Theme.** "You can build a real REST + DB + auth backend with Hephos."
 
 **Ship.** Consolidation of `0.0.2–0.0.4` into a reviewed, documented release:
 REST, DB, auth, in-process tasks, and in-process events all real and tested.
@@ -268,16 +268,16 @@ test; a rate-limited route returns `429` under load; a panicking handler returns
   backpressure (the no-spawn split-loop pattern as canon), clean close semantics.
 - SSE maturity: `Last-Event-ID` resume, retry hints, bounded buffering.
 - Per-connection and global connection caps; graceful shutdown drains sockets.
-- A `rivet` CLI (first cut): `rivet new` (scaffold an app from the template),
-  `rivet routes` (list the route table) — agent-run-ready commands.
+- A `hephos` CLI (first cut): `hephos new` (scaffold an app from the template),
+  `hephos routes` (list the route table) — agent-run-ready commands.
 
 **Explicitly not yet.** WebSocket pub/sub fan-out across instances; a CLI plugin
 system.
 
 **Acceptance.** Tests prove heartbeat/idle-timeout, oversized-message rejection,
-and disconnect cleanup; `rivet new` produces an app that passes `make ci`.
+and disconnect cleanup; `hephos new` produces an app that passes `make ci`.
 
-**Deps.** a small CLI arg parser (`clap`) for the `rivet` binary — justified: the
+**Deps.** a small CLI arg parser (`clap`) for the `hephos` binary — justified: the
 CLI is a distinct, agent-facing surface.
 
 ---
@@ -287,7 +287,7 @@ CLI is a distinct, agent-facing surface.
 **Theme.** Work that survives a restart, on the one database we already have.
 
 **Ship.**
-- Postgres-backed job queue **owned by Rivet** (a `jobs` table; polling + `LISTEN/NOTIFY`),
+- Postgres-backed job queue **owned by Hephos** (a `jobs` table; polling + `LISTEN/NOTIFY`),
   aligned to the existing `Task` API — no new infrastructure. (Prior art: `apalis`;
   we stay Postgres-native and opinionated rather than taking a dependency.)
 - Retries with exponential backoff, dead-letter, idempotency keys, visibility
@@ -337,13 +337,13 @@ run that exceeds `max_turns` errors; dropping the stream cancels generation.
 **Ship.**
 - Tool authorization model and error taxonomy finalized; tool registry.
 - MCP **server** via `rmcp`: stdio + Streamable HTTP (current transport), exposing
-  Rivet tools, resources, and prompts — one definition, two consumers.
+  Hephos tools, resources, and prompts — one definition, two consumers.
 - MCP **client**: consume external MCP servers as agent tools.
 - OpenAPI generation from the route table (agent- and client-friendly).
 
 **Explicitly not yet.** A proprietary tool protocol (we use MCP); GraphQL.
 
-**Acceptance.** The `mcp` example serves a Rivet tool over stdio and Streamable
+**Acceptance.** The `mcp` example serves a Hephos tool over stdio and Streamable
 HTTP and is driven by an MCP client in a test; the same tool is callable by an
 in-process agent with no second implementation; generated OpenAPI validates.
 
@@ -359,7 +359,7 @@ decided during the milestone; MCP via `rmcp` (already in tree).
 **Ship.**
 - **Postgres-checkpointed workflows** (DBOS-style): each step ends in a DB
   transaction recording progress; resume reads the last checkpoint. No replay DSL,
-  no determinism constraints, no new infra — consistent with Rivet's philosophy.
+  no determinism constraints, no new infra — consistent with Hephos's philosophy.
 - Durable agent runs (a long agent survives process restarts).
 - Human-in-the-loop approval steps; saga/compensation pattern as canon.
 - Cancellation and timeouts at the workflow and step level.
@@ -438,10 +438,10 @@ benchmark gate blocks a regression PR.
 - Public API frozen under SemVer; LTS commitment and support policy.
 - Complete documentation site, tutorials, and per-capability guides; every example
   production-grade and security-reviewed.
-- `rivet` CLI matured: `new`, `migrate`, `routes`, `openapi`, `check`.
+- `hephos` CLI matured: `new`, `migrate`, `routes`, `openapi`, `check`.
 - Independent security audit completed; performance targets validated.
 - A published, versioned "agent playbook": the exact prompts/patterns a coding agent
-  uses to extend a Rivet app — the capstone of the agent-first thesis.
+  uses to extend a Hephos app — the capstone of the agent-first thesis.
 
 **Acceptance.** A coding agent, given only the repo and the playbook, builds a
 non-trivial production backend (REST + DB + auth + jobs + an agent + MCP) that
@@ -459,9 +459,9 @@ acceptance, **M** should land in its window, **L** opportunistic.
 **Pull-forward (these undermine *currently documented* contracts — fix as the
 relevant milestone opens, not later):** ~~`From<sqlx::Error>` missing~~ (fixed in
 `0.0.2`), `Db::migrate` no-op, ~~extractor error leakage~~ (fixed in `0.0.2`), the
-agent `stream`/`timeout` doc claims, and `rivet-mcp` discarding the tool instance.
+agent `stream`/`timeout` doc claims, and `hephos-mcp` discarding the tool instance.
 
-### `rivet-core`
+### `hephos-core`
 
 | Sev | Finding (location) | Fix | Target |
 | --- | --- | --- | --- |
@@ -474,11 +474,11 @@ agent `stream`/`timeout` doc claims, and `rivet-mcp` discarding the tool instanc
 | M | `authenticated`: strict `Bearer ` only, no token-length cap, `verify` non-401 errors pass through (`router.rs:authenticated`) | normalize scheme, cap length, force-map to 401 | `0.0.4` |
 | M | Two ways to build `Internal` (`Error::internal` vs `From`), no context-wrapping (`error.rs`) | document/`.context()` to remove ambiguity | `0.1.0` |
 
-### `rivet-db`
+### `hephos-db`
 
 | Sev | Finding (location) | Fix | Target |
 | --- | --- | --- | --- |
-| H | `rivet-core::Error` had no `From<sqlx::Error>`, so the repo `…await?` snippet would not compile — surfaced as the `database` CI job's `E0277` | added a feature-gated `From<sqlx::Error> → Internal` in `rivet-core` (behind a `sqlx` feature that `rivet-db` enables) | ✅ pulled forward to `0.0.2` |
+| H | `hephos-core::Error` had no `From<sqlx::Error>`, so the repo `…await?` snippet would not compile — surfaced as the `database` CI job's `E0277` | added a feature-gated `From<sqlx::Error> → Internal` in `hephos-core` (behind a `sqlx` feature that `hephos-db` enables) | ✅ pulled forward to `0.0.2` |
 | H | `Db::migrate` is a silent no-op returning `Ok(())` while its doc promises to run migrations (`lib.rs:migrate`) | take a `&Migrator` (app passes `migrate!()`) or make it a doc-only marker | `0.0.3` |
 | H | No `acquire_timeout`/`statement_timeout`; a stuck query pins a connection → pool exhaustion/DoS (`lib.rs:connect`) | set acquire + statement timeouts at connect | `0.0.3` → tune `0.2.0` |
 | H | No test fixtures (rolled-back `Tx`, disposable DB) despite CONVENTIONS §5 promising them | add `test_pool()` + `with_rolled_back_tx(..)` | `0.0.3` |
@@ -486,7 +486,7 @@ agent `stream`/`timeout` doc claims, and `rivet-mcp` discarding the tool instanc
 | M | Hardcoded `max_connections(16)`, no min/lifetime/idle config (`lib.rs`) | accept pool config via env/struct | `0.0.3` |
 | M | No `SQLX_OFFLINE`/`.sqlx` cache doc; compile needs a live DB | document `cargo sqlx prepare`, commit `.sqlx/` | `0.0.3` |
 
-### `rivet-agent`
+### `hephos-agent`
 
 | Sev | Finding (location) | Fix | Target |
 | --- | --- | --- | --- |
@@ -501,7 +501,7 @@ agent `stream`/`timeout` doc claims, and `rivet-mcp` discarding the tool instanc
 | M | API key held as plain `String`, no redaction (`providers.rs`) | wrap in a zeroizing/secret type | `0.5.0` → `0.8.0` |
 | H | No tests; turn loop untestable offline | add a `MockModel`; test limits, dispatch, `run_typed` success/failure | `0.5.0` |
 
-### `rivet-mcp`
+### `hephos-mcp`
 
 | Sev | Finding (location) | Fix | Target |
 | --- | --- | --- | --- |
@@ -514,11 +514,11 @@ agent `stream`/`timeout` doc claims, and `rivet-mcp` discarding the tool instanc
 | M | Schema-parity between agent and MCP producers is untested | add a unit test comparing `tool_schema::<T>()` outputs | `0.6.0` |
 | L | Unused `anyhow`/`tracing` deps (`Cargo.toml`) | drop until needed | quick |
 
-### `rivet` (meta)
+### `hephos` (meta)
 
 | Sev | Finding (location) | Fix | Target |
 | --- | --- | --- | --- |
-| H | `rivet::test` is re-exported unconditionally — the internal harness ships in release builds and pulls test plumbing into every binary (`lib.rs` / `rivet-core/lib.rs:pub mod test`) | feature-gate behind `cfg(test)`/`test-util` | `0.1.0` |
+| H | `hephos::test` is re-exported unconditionally — the internal harness ships in release builds and pulls test plumbing into every binary (`lib.rs` / `hephos-core/lib.rs:pub mod test`) | feature-gate behind `cfg(test)`/`test-util` | `0.1.0` |
 | H | Nothing proves the feature matrix compiles | add a `cargo hack --feature-powerset check` CI job | `0.1.0` |
 | M | Prelude omits `ws`/`sse`, forcing a second import path in the websocket example (`lib.rs:prelude`) | re-export `ws`/`sse` from the prelude | `0.1.0` |
 | M | Agent apps re-import `Completion`/`Message`/`TextStream` after `prelude::*` | add them to the `agent`-gated prelude block | `0.1.0` |
@@ -541,7 +541,7 @@ These never "complete"; they deepen each release. Each has a standing bar.
   every canonical-pattern decision; runbooks and an operations guide by `0.9`;
   versioned docs at `1.0`. No feature merges without its `CONVENTIONS.md` shape and
   an example in the same change.
-- **Developer experience & the `rivet` CLI.** The CLI is a first-class, agent-facing
+- **Developer experience & the `hephos` CLI.** The CLI is a first-class, agent-facing
   surface and a force multiplier for the agent-first thesis: `new` (`0.3`),
   `routes`/`doctor` (`0.3`), `migrate` (`0.3`), `generate` (scaffold an
   endpoint/service/repo/tool/agent in the canonical shape — the single biggest
@@ -566,11 +566,11 @@ These never "complete"; they deepen each release. Each has a standing bar.
 
 ## Capability areas mapped onto the ladder
 
-Breadth a production framework needs, each with Rivet's **opinionated** answer and
-its target. Where the honest answer is "an operator/vendor concern," Rivet ships a
+Breadth a production framework needs, each with Hephos's **opinionated** answer and
+its target. Where the honest answer is "an operator/vendor concern," Hephos ships a
 **seam, not an implementation** (see the principle at the end).
 
-| Area | Rivet's opinionated provision | Target |
+| Area | Hephos's opinionated provision | Target |
 | --- | --- | --- |
 | Error bodies | `{error:{kind,message}}` today (shipped); whether to adopt RFC 9457 `application/problem+json` is an **open decision** — see Risks | decide `0.1.0` |
 | Pagination / filter / sort | one cursor-based convention + query extractors | `0.1.0` |
@@ -597,11 +597,11 @@ its target. Where the honest answer is "an operator/vendor concern," Rivet ships
 
 ## Agent-native capability track (the differentiator)
 
-This is why Rivet exists; it is planned deepest. All of it is built on the same
+This is why Hephos exists; it is planned deepest. All of it is built on the same
 primitives (Postgres, tasks, workflows, the `Model`/`Tool`/`Agent` core) — no new
 infrastructure, consistent with the philosophy.
 
-| Capability | What Rivet provides | Target |
+| Capability | What Hephos provides | Target |
 | --- | --- | --- |
 | Core loop | bounded turn loop, tool dispatch, structured output, streaming | `0.5.0` |
 | Cost & quota | token accounting, per-tenant/agent budgets, cost tracking | `0.5.0` |
@@ -659,7 +659,7 @@ We do not chase every agent-framework feature; we provide the few that compose.
 
 **Docs & DX**
 - [ ] Doc site, tutorials, cookbook, ADRs, runbooks, migration guides; every example production-grade.
-- [ ] `rivet` CLI: `new`, `generate`, `migrate`, `routes`, `openapi`, `check`, `doctor`.
+- [ ] `hephos` CLI: `new`, `generate`, `migrate`, `routes`, `openapi`, `check`, `doctor`.
 - [ ] Deployment artifacts (Docker/k8s/Helm) and a 12-factor guide.
 
 **Agent**
@@ -704,13 +704,13 @@ revisited, rather than discovered in production.
 - **Agent-layer timing.** The agent value (`0.5`+) is the differentiator but lands
   mid-roadmap. *Open decision:* ship a minimal agent MVP right after `0.2` to validate
   the thesis and attract adoption, trading some REST/ops polish for an earlier proof of
-  the thing that makes Rivet distinctive?
-- **Ecosystem & provider churn.** Rivet rides Axum/Tower/SQLx/rmcp and vendor LLM APIs;
+  the thing that makes Hephos distinctive?
+- **Ecosystem & provider churn.** Hephos rides Axum/Tower/SQLx/rmcp and vendor LLM APIs;
   an upstream breaking change or a provider API shift is a maintenance tax. *Mitigation:*
   the wrapper surface is deliberately small and version-pinned; providers sit behind the
   two-method `Model` trait, so a vendor change is contained to one file.
 - **The meta-risk.** If agents get good enough to wield un-opinionated frameworks
-  directly, Rivet's edge narrows. *The bet:* regularity still cuts tokens, errors, and
+  directly, Hephos's edge narrows. *The bet:* regularity still cuts tokens, errors, and
   review cost even for strong agents — and that advantage grows with codebase size, not
   shrinks.
 
@@ -734,17 +734,26 @@ revisited, rather than discovered in production.
 
 ### The adoption bar (why an engineer actually switches)
 
+- **The headline proof: agent-turns-to-green-build.** Benchmark a coding agent
+  building the same real API in Hephos vs. raw Axum (and vs. FastAPI), measuring turns
+  to a *compiling, passing* build and runtime bugs that slipped through. If an agent
+  gets Hephos right on turn 1 where raw Axum takes 3, that number — not prose — is the
+  marketing. Establish the harness by `0.9`; it is the thesis made falsifiable.
 - Overhead vs. raw Axum+SQLx is negligible **and published** (`0.9`).
 - A **reference application** proves the whole stack composes (`0.9`).
 - The **agent playbook** makes "an agent builds a production backend with no human
   disambiguation" reproducible, not a slogan (`1.0`).
+- **Fast feedback loop.** Agent iteration speed is `cargo check` speed. Keep
+  `hephos-core` lean, favor derives over heavy proc-macros, ship the opt-in faster
+  linker config, and keep the "check before test" protocol (CLAUDE.md §11) — compile
+  latency is a first-class adoption metric, tracked each release.
 
 ## Explicitly out of scope until after 1.0
 
 Committing to these now would trade away the coherence that is the whole point.
-The governing principle for breadth: **Rivet ships seams, not vendor
+The governing principle for breadth: **Hephos ships seams, not vendor
 implementations** — an object-store trait, a `Notifier` trait, a secrets-provider
-trait, a cache seam — so an operator plugs in S3 / SES / Vault / Redis without Rivet
+trait, a cache seam — so an operator plugs in S3 / SES / Vault / Redis without Hephos
 taking a dependency on any of them.
 
 - A second database backend; a query builder or ORM.

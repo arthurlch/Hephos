@@ -1,6 +1,6 @@
-use rivet::prelude::*;
+use hephos::prelude::*;
 
-pub type Ctx = rivet::Ctx<AppState>;
+pub type Ctx = hephos::Ctx<AppState>;
 
 #[derive(Clone)]
 pub struct AppState;

@@ -1,6 +1,6 @@
 # example-mcp
 
-Expose a Rivet `Tool` over the Model Context Protocol using `rmcp`, the official
+Expose a Hephos `Tool` over the Model Context Protocol using `rmcp`, the official
 Rust MCP SDK. The tool here is the **same** `SearchUsers` shape as `example-tools`
 — one tool definition, reachable by an in-process `Agent` and by any external MCP
 client, with no second implementation.
@@ -13,11 +13,11 @@ src/
   mcp/server.rs         McpServer wiring: register the tool, serve over stdio.
 ```
 
-Rivet does not define a protocol. `rivet-mcp` wraps rmcp: it registers each Rivet
+Hephos does not define a protocol. `hephos-mcp` wraps rmcp: it registers each Hephos
 `Tool` as an MCP tool whose input schema is the tool's derived `schemars` schema,
 and serves over stdio (local) or Streamable HTTP (networked — the current MCP
 transport that replaced HTTP+SSE). The `serve_stdio` / Streamable HTTP wiring is
-marked `// BOUNDARY:` in `crates/rivet-mcp`; this example shows the intended call
+marked `// BOUNDARY:` in `crates/hephos-mcp`; this example shows the intended call
 site.
 
 Run (as a local MCP server over stdio): `cargo run -p example-mcp`

@@ -1,5 +1,5 @@
-use rivet::agent::{Completion, Message, Model, TextStream};
-use rivet::prelude::*;
+use hephos::agent::{Completion, Message, Model, TextStream};
+use hephos::prelude::*;
 
 /// A deterministic `Model` for offline runs and tests. It inspects the request:
 /// when a response schema is set (structured output), it returns canned JSON;

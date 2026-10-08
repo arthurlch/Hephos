@@ -6,7 +6,7 @@ deltas) — and how limits bound every run.
 
 To keep the example runnable offline and deterministic, it uses a `ScriptedModel`
 that implements the `Model` trait with canned responses. **In production** you
-would swap it for `rivet::agent::providers::Anthropic::from_env(...)` — nothing
+would swap it for `hephos::agent::providers::Anthropic::from_env(...)` — nothing
 else about the agent changes, which is the point of the `Model` abstraction.
 
 ```

@@ -24,13 +24,13 @@ build:
 	cargo build --locked $(OFFLINE)
 
 run-rest:
-	RIVET_ADDR=127.0.0.1:8080 cargo run -p example-rest
+	HEPHOS_ADDR=127.0.0.1:8080 cargo run -p example-rest
 
 run-streaming:
-	RIVET_ADDR=127.0.0.1:8080 cargo run -p example-streaming
+	HEPHOS_ADDR=127.0.0.1:8080 cargo run -p example-streaming
 
 run-websocket:
-	RIVET_ADDR=127.0.0.1:8080 cargo run -p example-websocket
+	HEPHOS_ADDR=127.0.0.1:8080 cargo run -p example-websocket
 
 clean:
 	cargo clean

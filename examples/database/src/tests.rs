@@ -5,7 +5,7 @@
 //! they are `#[ignore]` until that lands — run them with
 //! `DATABASE_URL=… cargo test -p example-database -- --ignored`.
 
-use rivet::test::TestClient;
+use hephos::test::TestClient;
 use serde_json::{Value, json};
 
 use crate::api;

@@ -5,7 +5,7 @@ mod state;
 #[cfg(test)]
 mod tests;
 
-use rivet::prelude::*;
+use hephos::prelude::*;
 
 use crate::state::AppState;
 

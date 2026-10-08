@@ -1,4 +1,4 @@
-# Releasing Rivet
+# Releasing Hephos
 
 Releases are tag-driven. Pushing a `vX.Y.Z` tag runs `.github/workflows/release.yml`,
 which re-runs the offline gate and publishes a GitHub Release.
@@ -25,10 +25,10 @@ which re-runs the offline gate and publishes a GitHub Release.
 The `publish` job is a no-op unless the `CARGO_REGISTRY_TOKEN` repo secret is set, so
 GitHub Releases work without it. Before crates.io publishing can succeed:
 
-- The internal `rivet-*` dependencies in `[workspace.dependencies]` are currently
+- The internal `hephos-*` dependencies in `[workspace.dependencies]` are currently
   `{ path = ... }` only. crates.io requires a **version** alongside the path
   (`{ path = "...", version = "X.Y.Z" }`). Add versions before the first publish.
-- Crates publish in dependency order (`rivet-core → rivet-db → rivet-agent →
-  rivet-mcp → rivet`); the workflow already does this with a short delay between each.
+- Crates publish in dependency order (`hephos-core → hephos-db → hephos-agent →
+  hephos-mcp → hephos`); the workflow already does this with a short delay between each.
 
 Until the project reaches `0.1.0` and the API stabilizes, prefer GitHub Releases only.
