@@ -12,8 +12,9 @@ use crate::identity::{Identity, Principal};
 /// and tool entry point.
 ///
 /// `Ctx<S>` carries the application state `S`, the resolved [`Identity`], a
-/// request id, and a [`CancellationToken`] that fires on client disconnect or
-/// server shutdown. Every app aliases it once in `state.rs`:
+/// request id, and a [`CancellationToken`] that fires on graceful shutdown (client
+/// disconnect is handled by the runtime dropping the handler future). Every app
+/// aliases it once in `state.rs`:
 ///
 /// ```ignore
 /// pub type Ctx = rivet::Ctx<AppState>;
@@ -67,8 +68,10 @@ impl<S: Clone + Send + Sync + 'static> Ctx<S> {
         self.request_id
     }
 
-    /// Fires on client disconnect or graceful shutdown. Select against this in
-    /// any loop or long-running operation.
+    /// Fires on graceful shutdown. Select against this in any loop or long-running
+    /// operation so background and streaming work stops cleanly when the process is
+    /// draining. (Client disconnect is handled separately, by the runtime dropping
+    /// the handler future and any streaming body.)
     pub fn cancel_token(&self) -> &CancellationToken {
         &self.cancel
     }
@@ -138,13 +141,10 @@ where
     }
 }
 
-/// Request correlation id, read from request extensions here.
-///
-/// BOUNDARY: inserted by the standard middleware stack (see `app::standard_stack`).
-/// Until that stack is wired, no code constructs it and `Ctx` falls back to a
-/// freshly generated id — hence `allow(dead_code)` on the constructor path.
+/// Request correlation id. Inserted by the standard middleware stack
+/// (`stack::observe`) and read here so `Ctx::request_id` matches the request span and
+/// the `x-request-id` response header.
 #[derive(Clone, Copy)]
-#[allow(dead_code)]
 pub(crate) struct RequestId(pub Uuid);
 
 #[cfg(test)]

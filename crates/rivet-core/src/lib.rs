@@ -17,6 +17,7 @@ mod event;
 mod extract;
 mod identity;
 mod router;
+mod stack;
 mod task;
 pub mod test;
 
