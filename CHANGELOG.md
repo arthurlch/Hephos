@@ -5,6 +5,17 @@ All notable changes to Hephos are recorded here. Format follows
 
 ## [Unreleased]
 
+### Added (0.0.3 — Database, for real)
+- `Db::migrate(&Migrator)` runs embedded migrations (idempotent); the DB examples
+  self-migrate in `AppState::init` via `sqlx::migrate!("./migrations")`.
+- Env-driven `PoolConfig` (`HEPHOS_DB_MAX_CONNECTIONS`, `HEPHOS_DB_ACQUIRE_TIMEOUT_SECS`,
+  `HEPHOS_DB_STATEMENT_TIMEOUT_SECS`); the server-side statement timeout is installed
+  per connection so a stuck query can't pin the pool.
+- `hephos::db::test::TestDb` — a disposable, migrated database per test, dropped on
+  `cleanup` (no residue); plus the documented rolled-back-tx pattern.
+- CI DB job applies schema via `cargo sqlx migrate run` and runs the DB-example flow
+  tests with `--include-ignored`.
+
 ### Changed
 - **Renamed the project `rivet` → `hephos`** (crates `hephos`, `hephos-core`,
   `hephos-db`, `hephos-agent`, `hephos-mcp`; env vars `HEPHOS_*`; all imports, docs,

@@ -156,27 +156,33 @@ MSRV stays 1.85 until then.
 
 ---
 
-## `0.0.3` — Database, for real
+## `0.0.3` — Database, for real ✅ (shipped)
 
 **Theme.** The persistence path end-to-end, runnable in CI.
 
-**Ship.**
-- Wire `Db::migrate` to `sqlx::migrate!` with the app-owned `migrations/` dir;
-  migrations run on startup and in tests.
-- Pool configuration (size, acquire timeout, statement timeout) via env.
-- Transaction ergonomics finalized; repository pattern battle-tested.
-- Test fixtures in `hephos::test`: a rolled-back-transaction helper and a
-  per-test disposable-database helper.
-- `database` + `auth` examples run green in the CI Postgres job (not `#[ignore]`d).
+**Shipped.**
+- `Db::migrate(&Migrator)` runs embedded migrations (idempotent). The app owns its
+  `migrations/` dir and passes `sqlx::migrate!("./migrations")`; the DB examples
+  self-migrate in `AppState::init`.
+- Env-driven pool config (`PoolConfig`): `HEPHOS_DB_MAX_CONNECTIONS`,
+  `HEPHOS_DB_ACQUIRE_TIMEOUT_SECS`, and a server-side `HEPHOS_DB_STATEMENT_TIMEOUT_SECS`
+  installed per connection — a stuck query can no longer pin a connection (DoS guard).
+- Test fixture `hephos::db::test::TestDb`: a uniquely-named, migrated, disposable
+  database per test, dropped on `cleanup` (leaves no residue). The rolled-back-tx case
+  is the plain `db.begin()` … `tx.rollback()` pattern (documented in CONVENTIONS §5).
+- CI applies schema via `cargo sqlx migrate run` (records migrations, so runtime
+  `db.migrate()` is a no-op and compile-time `query!` validation has a live schema);
+  the `database`/`auth` flow tests run via `--include-ignored`.
 
 **Explicitly not yet.** Second database backend (Postgres only); read replicas;
-query builder/ORM.
+query builder/ORM; a committed `.sqlx` offline cache (CI uses a live schema — the
+offline cache is a later build-speed optimization).
 
-**Acceptance.** CI Postgres job builds and runs `database`/`auth` flow tests
-(create→read roundtrip, unique-violation→409) against a live schema; fixtures leave
-no residue.
+**Acceptance (met).** The `database` example's `migrate_creates_schema_and_repo_roundtrips`
+test builds a fresh DB purely via `migrate`, round-trips a repo, and drops the DB;
+the create→read and unique-violation→409 flow tests run against a live schema in CI.
 
-**Deps.** none new.
+**Deps.** `uuid` added to `hephos-db` (disposable-db names); `sqlx-cli` in CI only.
 
 ---
 
@@ -479,12 +485,12 @@ agent `stream`/`timeout` doc claims, and `hephos-mcp` discarding the tool instan
 | Sev | Finding (location) | Fix | Target |
 | --- | --- | --- | --- |
 | H | `hephos-core::Error` had no `From<sqlx::Error>`, so the repo `…await?` snippet would not compile — surfaced as the `database` CI job's `E0277` | added a feature-gated `From<sqlx::Error> → Internal` in `hephos-core` (behind a `sqlx` feature that `hephos-db` enables) | ✅ pulled forward to `0.0.2` |
-| H | `Db::migrate` is a silent no-op returning `Ok(())` while its doc promises to run migrations (`lib.rs:migrate`) | take a `&Migrator` (app passes `migrate!()`) or make it a doc-only marker | `0.0.3` |
-| H | No `acquire_timeout`/`statement_timeout`; a stuck query pins a connection → pool exhaustion/DoS (`lib.rs:connect`) | set acquire + statement timeouts at connect | `0.0.3` → tune `0.2.0` |
-| H | No test fixtures (rolled-back `Tx`, disposable DB) despite CONVENTIONS §5 promising them | add `test_pool()` + `with_rolled_back_tx(..)` | `0.0.3` |
-| H | Executor-generic repo signature is the most token-heavy shape to copy; `Tx::exec()` returns a connection, not an `E` | pin one verbatim copy-paste template in docs | `0.0.3` |
-| M | Hardcoded `max_connections(16)`, no min/lifetime/idle config (`lib.rs`) | accept pool config via env/struct | `0.0.3` |
-| M | No `SQLX_OFFLINE`/`.sqlx` cache doc; compile needs a live DB | document `cargo sqlx prepare`, commit `.sqlx/` | `0.0.3` |
+| H | `Db::migrate` was a silent no-op while its doc promised to run migrations | now takes `&Migrator` and runs it (idempotent); examples pass `sqlx::migrate!()` | ✅ `0.0.3` |
+| H | No `acquire_timeout`/`statement_timeout`; a stuck query pins a connection → pool exhaustion/DoS | `PoolConfig` sets acquire + server-side statement timeouts at connect | ✅ `0.0.3` |
+| H | No test fixtures (disposable DB / rolled-back `Tx`) despite CONVENTIONS §5 promising them | added `hephos::db::test::TestDb` (disposable, migrated, dropped on cleanup); documented the rollback pattern | ✅ `0.0.3` |
+| M | Hardcoded `max_connections(16)`, no config | `PoolConfig::from_env` (max_connections + timeouts) | ✅ `0.0.3` |
+| L | Executor-generic repo signature is token-heavy; `Tx::exec()` returns a connection, not an `E` | pin one verbatim copy-paste template in CONVENTIONS | `0.1.0` |
+| L | No committed `.sqlx` offline cache; compile needs a live DB (CI applies schema) | commit `.sqlx` for offline/faster builds | `0.1.0` |
 
 ### `hephos-agent`
 
