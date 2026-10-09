@@ -35,7 +35,7 @@ hephos-mcp = { path = "crates/hephos-mcp" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync", "time", "net"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 tower = { version = "0.5", features = ["util"] }
-tower-http = { version = "0.6", features = ["trace", "timeout", "limit"] }
+tower-http = { version = "0.7", features = ["trace", "timeout", "limit"] }
 axum = { version = "0.8", features = ["ws", "macros"] }
 hyper = "1"
 serde = { version = "1", features = ["derive"] }
@@ -49,19 +49,19 @@ time = { version = "0.3", features = ["serde"] }
 futures = "0.3"
 
 # database
-sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "time", "macros", "migrate"] }
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "time", "macros", "migrate"] }
 
 # auth
-jsonwebtoken = "9"
-argon2 = "0.5"
+jsonwebtoken = "11"
+argon2 = "0.6"
 
 # agent / tools
-schemars = "0.8"
+schemars = "1.2"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 async-stream = "0.3"
 
 # mcp
-rmcp = { version = "0.9", features = ["server", "transport-io", "transport-streamable-http-server"] }
+rmcp = { version = "3.5", features = ["server", "transport-io", "transport-streamable-http-server"] }
 
 # Faster edit→check→test loop for agents: line-tables-only debuginfo links much
 # faster than full debuginfo while keeping backtraces and line numbers.
