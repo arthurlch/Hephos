@@ -16,7 +16,7 @@ pub struct AppState {
 impl AppState {
     pub async fn init() -> Result<Self> {
         let db = Db::connect_from_env().await?;
-        db.migrate().await?;
+        db.migrate(&sqlx::migrate!("./migrations")).await?;
         let auth = AuthService::from_env(db.clone())?;
         let users = UserService::new(db);
         Ok(AppState { auth, users })

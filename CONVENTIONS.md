@@ -106,13 +106,18 @@ pub struct AppState {
 impl AppState {
     pub async fn init() -> Result<Self> {
         let db = Db::connect_from_env().await?;
-        db.migrate().await?;
+        db.migrate(&sqlx::migrate!("./migrations")).await?;
         let events = Events::new(1024);
         let users = UserService::new(db.clone(), events.clone());
         Ok(AppState { db, events, users })
     }
 }
 ```
+
+`db.migrate(&sqlx::migrate!("./migrations"))` embeds the app's `migrations/` dir at
+compile time and runs any unapplied migrations (idempotent). Hold `db` in `AppState`
+only if a handler/task reads it directly; otherwise pass it into the services that own
+it (the examples do the latter).
 
 ### 2.2 REST endpoint (`api/users.rs`)
 
@@ -525,10 +530,36 @@ Rules:
   asserting status and `error.kind`.
 - Build service-level contexts with `Ctx::detached(state)`.
 - No network in tests; exercise `Model` via a test implementation.
-- Tests needing external infra (Postgres, wired migrations) are `#[ignore = "…"]`
-  with the reason, so `cargo test` stays green offline.
+- Tests needing external infra (Postgres) are `#[ignore = "…"]` with the reason, so
+  `cargo test` stays green offline; CI runs them with `--include-ignored`.
 - Name tests `fn <subject>_<condition>_<expected>()`:
   `create_empty_email_is_400`, `get_missing_product_is_404`.
+
+### 5.2 Database tests (leave no residue)
+
+Two shapes, both `#[ignore]`d offline:
+
+```rust
+// Disposable database — a fresh, migrated DB per test, dropped afterward.
+use hephos::db::test::TestDb;
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn creates_and_reads() {
+    let test_db = TestDb::create(&sqlx::migrate!("./migrations")).await.unwrap();
+    let user = UserRepo::create(test_db.db().pool(), &new_user()).await.unwrap();
+    assert!(UserRepo::find(test_db.db().pool(), user.id).await.unwrap().is_some());
+    test_db.cleanup().await.unwrap(); // drops the database — no residue
+}
+```
+
+```rust
+// Rolled-back transaction — when you only need isolation, not a fresh DB.
+let mut tx = db.begin().await?;
+let user = UserRepo::create(tx.exec(), &new_user()).await?;
+// ... assertions using tx.exec() ...
+tx.rollback().await?; // nothing persists
+```
 
 ---
 

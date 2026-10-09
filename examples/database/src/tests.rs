@@ -1,19 +1,44 @@
-//! HTTP-surface tests.
-//!
-//! `routes_build` runs wherever the crate compiles. The data-flow tests need a
-//! live Postgres *and* wired migrations (`Db::migrate` is a BOUNDARY today), so
-//! they are `#[ignore]` until that lands — run them with
-//! `DATABASE_URL=… cargo test -p example-database -- --ignored`.
+//! Tests. `routes_build` runs wherever the crate compiles. The data-flow tests need
+//! a live Postgres, so they are `#[ignore]` offline — run them with
+//! `DATABASE_URL=… cargo test -p example-database -- --include-ignored`.
 
+use hephos::db::test::TestDb;
 use hephos::test::TestClient;
 use serde_json::{Value, json};
 
 use crate::api;
+use crate::domain::user::CreateUser;
+use crate::repos::users::UserRepo;
 use crate::state::AppState;
 
 #[tokio::test]
 async fn routes_build() {
     let _ = api::routes();
+}
+
+/// Proves `Db::migrate` builds the schema from scratch and a repo round-trips —
+/// on a disposable database that is dropped afterward, so it leaves no residue.
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn migrate_creates_schema_and_repo_roundtrips() {
+    let test_db = TestDb::create(&sqlx::migrate!("./migrations"))
+        .await
+        .unwrap();
+
+    let created = UserRepo::create(
+        test_db.db().pool(),
+        &CreateUser {
+            email: "ada@example.com".into(),
+        },
+    )
+    .await
+    .unwrap();
+    let found = UserRepo::find(test_db.db().pool(), created.id)
+        .await
+        .unwrap();
+    assert_eq!(found.unwrap().email, "ada@example.com");
+
+    test_db.cleanup().await.unwrap();
 }
 
 async fn client() -> TestClient {
