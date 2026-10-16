@@ -28,6 +28,7 @@ use crate::identity::Identity;
 pub(crate) struct StackConfig {
     pub timeout: Duration,
     pub body_limit: usize,
+    pub hsts: bool,
 }
 
 impl Default for StackConfig {
@@ -35,6 +36,7 @@ impl Default for StackConfig {
         StackConfig {
             timeout: Duration::from_secs(30),
             body_limit: 2 * 1024 * 1024,
+            hsts: false,
         }
     }
 }
@@ -49,6 +51,7 @@ pub(crate) fn apply<S>(
 where
     S: Clone + Send + Sync + 'static,
 {
+    let hsts = config.hsts;
     // `.layer()` applies outermost-last, so the call order below is innermost-first.
     router
         .layer(middleware::from_fn(move |req, next| {
@@ -59,12 +62,14 @@ where
             StatusCode::REQUEST_TIMEOUT,
             config.timeout,
         ))
-        .layer(middleware::from_fn(observe))
+        .layer(middleware::from_fn(move |req, next| {
+            observe(req, next, hsts)
+        }))
 }
 
 /// Outermost: assign a request id, open the request span, seed a default identity,
-/// and echo the id back as `x-request-id` for client/log correlation.
-async fn observe(mut req: Request, next: Next) -> Response {
+/// echo the id back as `x-request-id`, and set baseline security response headers.
+async fn observe(mut req: Request, next: Next, hsts: bool) -> Response {
     let request_id = Uuid::new_v4();
     req.extensions_mut().insert(RequestId(request_id));
     req.extensions_mut().insert(Identity::Anonymous);
@@ -75,8 +80,24 @@ async fn observe(mut req: Request, next: Next) -> Response {
 
     let mut response = async move { next.run(req).await }.instrument(span).await;
 
+    let headers = response.headers_mut();
     if let Ok(value) = HeaderValue::from_str(&request_id.to_string()) {
-        response.headers_mut().insert("x-request-id", value);
+        headers.insert("x-request-id", value);
+    }
+    // Safe-by-default security headers for an API. These are always correct; HSTS is
+    // opt-in because it only applies behind TLS (see `Config::hsts`). CSP is
+    // app-specific and intentionally left to the application.
+    headers.insert(
+        "x-content-type-options",
+        HeaderValue::from_static("nosniff"),
+    );
+    headers.insert("x-frame-options", HeaderValue::from_static("DENY"));
+    headers.insert("referrer-policy", HeaderValue::from_static("no-referrer"));
+    if hsts {
+        headers.insert(
+            "strict-transport-security",
+            HeaderValue::from_static("max-age=63072000; includeSubDomains"),
+        );
     }
     response
 }

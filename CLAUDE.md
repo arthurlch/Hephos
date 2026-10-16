@@ -170,6 +170,12 @@ Rules:
   edge; business rules are checked in the service). Return `Error::invalid`.
 - Hash passwords with `argon2`. Verify tokens with `jsonwebtoken`. Never roll
   your own crypto.
+- Baseline security headers (nosniff, frame-deny, referrer-policy) are set by the
+  standard stack automatically — do not re-add them per route. Enable HSTS with
+  `HEPHOS_HSTS` only when serving over TLS.
+- An insert guarded by a `UNIQUE` index must map the violation to `Error::conflict`
+  via `hephos::db::is_unique_violation` — a `find`-then-`insert` check alone loses to
+  concurrency and returns `500` instead of `409`.
 
 ---
 

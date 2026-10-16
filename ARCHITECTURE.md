@@ -187,8 +187,10 @@ once in `hephos-core::stack` and installed by `App::run`. In order, outermost to
 innermost:
 
 1. **Observe** — generate a request-id UUID, insert it and a default
-   `Identity::Anonymous` into extensions, open a request span (method, path, id), and
-   echo the id back as the `x-request-id` response header for client/log correlation.
+   `Identity::Anonymous` into extensions, open a request span (method, path, id), echo
+   the id back as the `x-request-id` response header, and set baseline security headers
+   (`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy:
+   no-referrer`; HSTS when `HEPHOS_HSTS` is set, since it requires TLS).
 2. **Timeout** — a ceiling on *response generation* (`tower_http::timeout`, `408` on
    overrun). It bounds how long a handler may take to return its response, **not** body
    streaming — so SSE/WebSocket handlers, which return immediately, are unaffected by
@@ -518,8 +520,9 @@ derived from).
 
 ## 19. Configuration & secrets
 
-Minimal and decentralized by ownership. `hephos-core::Config` reads only the two
-things the framework needs (`HEPHOS_ADDR`, `HEPHOS_LOG`). Each component reads its
+Minimal and decentralized by ownership. `hephos-core::Config` reads only the small
+fixed set the framework itself needs (`HEPHOS_ADDR`, `HEPHOS_LOG`, `HEPHOS_TIMEOUT_SECS`,
+`HEPHOS_BODY_LIMIT`, `HEPHOS_HSTS`). Each component reads its
 own config from the environment where it is constructed (`Db` reads
 `DATABASE_URL`; a provider reads `ANTHROPIC_API_KEY`). There is no central config
 object threaded through the app. Secrets live in the environment, are never logged,
@@ -542,6 +545,8 @@ small.
 - Opaque internal errors; no leakage of internals to clients.
 - Secrets never logged; `Internal` errors logged server-side only.
 - Auth via verified tokens; passwords via `argon2`; no hand-rolled crypto.
+- Baseline security response headers on by default (nosniff, frame-deny,
+  referrer-policy); HSTS opt-in (`HEPHOS_HSTS`, TLS only); CSP left to the app.
 - Bounded resource use (timeouts, body limits, bounded channels, agent limits) so
   a single caller cannot exhaust the process.
 

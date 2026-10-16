@@ -63,6 +63,7 @@ impl TestClient {
             StackConfig {
                 timeout,
                 body_limit,
+                ..StackConfig::default()
             },
         )
     }

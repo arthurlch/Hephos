@@ -61,6 +61,22 @@ async fn response_carries_request_id_matching_the_body() {
 }
 
 #[tokio::test]
+async fn baseline_security_headers_are_set() {
+    let res = TestClient::new(routes(), S).get("/request-id").await;
+    assert_eq!(
+        res.header("x-content-type-options").as_deref(),
+        Some("nosniff")
+    );
+    assert_eq!(res.header("x-frame-options").as_deref(), Some("DENY"));
+    assert_eq!(
+        res.header("referrer-policy").as_deref(),
+        Some("no-referrer")
+    );
+    // HSTS is opt-in (TLS only); the default TestClient does not enable it.
+    assert_eq!(res.header("strict-transport-security"), None);
+}
+
+#[tokio::test]
 async fn identity_is_seeded_anonymous_by_default() {
     let client = TestClient::new(routes(), S);
     let res = client.get("/whoami").await;

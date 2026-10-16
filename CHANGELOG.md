@@ -5,6 +5,11 @@ All notable changes to Hephos are recorded here. Format follows
 
 ## [Unreleased]
 
+### Added (0.0.4 — Auth & authz hardening, in progress)
+- **Baseline security headers** on every response, set by the standard stack:
+  `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy:
+  no-referrer`. `Strict-Transport-Security` is opt-in via `HEPHOS_HSTS` (TLS only).
+
 ### Fixed (audit remediation)
 - **Unique-violation now maps to `409`, not `500`** — the DB-example repos catch a
   Postgres `23505` via the new `hephos::db::is_unique_violation` and return

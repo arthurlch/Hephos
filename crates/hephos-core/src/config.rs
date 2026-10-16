@@ -16,6 +16,7 @@ use crate::error::{Error, Result};
 /// | `HEPHOS_LOG`          | `pretty`       | `pretty` or `json` log output.       |
 /// | `HEPHOS_TIMEOUT_SECS` | `30`           | Per-request response-generation timeout. |
 /// | `HEPHOS_BODY_LIMIT`   | `2097152`      | Max request body size, in bytes (2 MiB). |
+/// | `HEPHOS_HSTS`         | `off`          | Send `Strict-Transport-Security` (only behind TLS). |
 #[derive(Debug, Clone)]
 pub struct Config {
     pub addr: SocketAddr,
@@ -26,6 +27,10 @@ pub struct Config {
     pub timeout: Duration,
     /// Maximum accepted request body size, in bytes. Oversized bodies get `413`.
     pub body_limit: usize,
+    /// Send the `Strict-Transport-Security` header. Off by default: HSTS only makes
+    /// sense when the app is served over TLS, and setting it over plain HTTP (or with
+    /// a wrong max-age) can lock clients out of the domain.
+    pub hsts: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,6 +49,7 @@ impl Config {
             std::env::var("HEPHOS_LOG").ok().as_deref(),
             std::env::var("HEPHOS_TIMEOUT_SECS").ok().as_deref(),
             std::env::var("HEPHOS_BODY_LIMIT").ok().as_deref(),
+            std::env::var("HEPHOS_HSTS").ok().as_deref(),
         )
     }
 
@@ -55,6 +61,7 @@ impl Config {
         log: Option<&str>,
         timeout_secs: Option<&str>,
         body_limit: Option<&str>,
+        hsts: Option<&str>,
     ) -> Result<Self> {
         let addr = match addr {
             Some(value) => value.parse().map_err(|_| {
@@ -92,11 +99,17 @@ impl Config {
             None => DEFAULT_BODY_LIMIT,
         };
 
+        let hsts = matches!(
+            hsts.map(str::to_ascii_lowercase).as_deref(),
+            Some("1" | "on" | "true" | "yes")
+        );
+
         Ok(Config {
             addr,
             log,
             timeout,
             body_limit,
+            hsts,
         })
     }
 }
@@ -107,11 +120,12 @@ mod tests {
 
     #[test]
     fn defaults_when_unset() {
-        let config = Config::parse(None, None, None, None).unwrap();
+        let config = Config::parse(None, None, None, None, None).unwrap();
         assert_eq!(config.addr.port(), 8080);
         assert_eq!(config.log, LogFormat::Pretty);
         assert_eq!(config.timeout, Duration::from_secs(30));
         assert_eq!(config.body_limit, 2 * 1024 * 1024);
+        assert!(!config.hsts);
     }
 
     #[test]
@@ -121,34 +135,55 @@ mod tests {
             Some("json"),
             Some("5"),
             Some("1024"),
+            Some("on"),
         )
         .unwrap();
         assert_eq!(config.addr.port(), 9000);
         assert_eq!(config.log, LogFormat::Json);
         assert_eq!(config.timeout, Duration::from_secs(5));
         assert_eq!(config.body_limit, 1024);
+        assert!(config.hsts);
+    }
+
+    #[test]
+    fn hsts_is_lenient_boolean() {
+        assert!(
+            Config::parse(None, None, None, None, Some("TRUE"))
+                .unwrap()
+                .hsts
+        );
+        assert!(
+            Config::parse(None, None, None, None, Some("1"))
+                .unwrap()
+                .hsts
+        );
+        assert!(
+            !Config::parse(None, None, None, None, Some("off"))
+                .unwrap()
+                .hsts
+        );
     }
 
     #[test]
     fn rejects_bad_addr() {
-        let err = Config::parse(Some("not-an-addr"), None, None, None).unwrap_err();
+        let err = Config::parse(Some("not-an-addr"), None, None, None, None).unwrap_err();
         assert!(matches!(err, Error::Invalid(_)));
     }
 
     #[test]
     fn rejects_bad_log_format() {
-        let err = Config::parse(None, Some("verbose"), None, None).unwrap_err();
+        let err = Config::parse(None, Some("verbose"), None, None, None).unwrap_err();
         assert!(matches!(err, Error::Invalid(_)));
     }
 
     #[test]
     fn rejects_bad_timeout_and_body_limit() {
         assert!(matches!(
-            Config::parse(None, None, Some("soon"), None).unwrap_err(),
+            Config::parse(None, None, Some("soon"), None, None).unwrap_err(),
             Error::Invalid(_)
         ));
         assert!(matches!(
-            Config::parse(None, None, None, Some("huge")).unwrap_err(),
+            Config::parse(None, None, None, Some("huge"), None).unwrap_err(),
             Error::Invalid(_)
         ));
     }

@@ -496,7 +496,7 @@ agent `stream`/`timeout` doc claims, and `hephos-mcp` discarding the tool instan
 
 | Sev | Finding (location) | Fix | Target |
 | --- | --- | --- | --- |
-| H | `Limits.timeout` is never enforced — `drive` has no wall-clock bound (`agent.rs:drive`) | wrap the loop in `tokio::time::timeout` | `0.5.0` |
+| H | `Limits.timeout` was never enforced — `drive` had no wall-clock bound | `drive` is wrapped in `tokio::time::timeout` (pulled forward by the deep audit) | ✅ done |
 | H | `max_tokens` is per-turn, so total ≈ `max_turns × max_tokens` — the "token ceiling" is violated (`agent.rs` / `Limits`) | track a running budget or document as per-turn | `0.5.0` |
 | H | Tool-call parsing seam is in `agent.rs:parse_tool_calls` (always `None`); a provider author can't enable tools by implementing `Model` only — contract bug | have `Model::complete` return the tool calls | `0.5.0` |
 | H | `stream` does not share the turn/tool loop despite the `Agent` doc claiming it does (`agent.rs:stream` vs doc) | fix the doc now; unify behavior in `0.5` | doc `0.0.x`, impl `0.5.0` |
@@ -586,7 +586,8 @@ its target. Where the honest answer is "an operator/vendor concern," Hephos ship
 | Conditional requests | ETag / `If-None-Match` / `If-Match` helpers | `0.2.0` |
 | Health & probes | `/health` (live), `/ready` (DB-aware), startup gate | `0.2.0` |
 | Rate limiting / abuse | `tower-governor` (GCRA), per-key quotas | `0.2.0` |
-| CORS / CSRF / security headers | one opinionated, minimal, documented config | `0.0.4`/`0.2.0` |
+| Security headers | ✅ baseline (nosniff, frame-deny, referrer-policy) always on; HSTS via `HEPHOS_HSTS` | ✅ `0.0.4` |
+| CORS / CSRF | one opinionated, minimal, documented config | `0.0.4` |
 | Caching | response + data cache seam (in-proc default; external seam) | `0.2.0` |
 | Config & feature flags | env-first typed config; a simple flag seam | `0.0.2`/`0.3.0` |
 | Secrets management | env/file + pluggable provider seam; never logged | `0.8.0` |
