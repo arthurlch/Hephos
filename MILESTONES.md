@@ -478,7 +478,7 @@ agent `stream`/`timeout` doc claims, and `hephos-mcp` discarding the tool instan
 | H | No unit tests (Config parsing, Error status/kind/opacity, `nest("/")` panic) | added unit + integration + stack tests | ✅ `0.0.2` |
 | M | `TestClient` lacked `post_json_with_token` / `error_kind()` | added, plus `with_stack` + `header()` | ✅ `0.0.2` |
 | L | `Ctx` keeps `unwrap_or` fallbacks for extensions (`ctx.rs:from_request_parts`) | intentionally retained — `Ctx::detached` (tasks/tests) has no extensions; the stack now always seeds the HTTP path | won't fix |
-| M | `authenticated`: strict `Bearer ` only, no token-length cap, `verify` non-401 errors pass through (`router.rs:authenticated`) | normalize scheme, cap length, force-map to 401 | `0.0.4` |
+| M | `authenticated`: strict `Bearer ` only, no token-length cap, `verify` non-401 errors pass through (`router.rs:authenticated`) | scheme normalized (case-insensitive, `0.0.3`) + length cap (`MAX_TOKEN_LEN`, `0.0.4`). **Non-401 pass-through kept intentionally**: once `verify` does I/O (API-key lookup) an internal failure must surface as `500`, not be masked as `401` | ✅ `0.0.4` |
 | M | Two ways to build `Internal` (`Error::internal` vs `From`), no context-wrapping (`error.rs`) | document/`.context()` to remove ambiguity | `0.1.0` |
 
 ### `hephos-db`

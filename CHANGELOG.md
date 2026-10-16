@@ -24,6 +24,9 @@ All notable changes to Hephos are recorded here. Format follows
   detection and revokes the user's whole token family.
 - `StatusCode` is now in `hephos::prelude`, so the doctrine's `Result<StatusCode>`
   `204` handler shape (CLAUDE.md §4) works without importing `axum`.
+- **Auth-seam token-length cap** (`MAX_TOKEN_LEN`, 4 KiB): the bearer extractor
+  rejects oversized credentials before `verify` runs, so a caller cannot force
+  signature checks or credential-store lookups on pathologically large input.
 
 ### Fixed (audit remediation)
 - **Unique-violation now maps to `409`, not `500`** — the DB-example repos catch a
