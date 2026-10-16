@@ -1,9 +1,9 @@
 # example-auth
 
-Real token authentication: `argon2` password hashing, short-lived JWT access tokens
-with a rotating refresh-token lifecycle, machine-to-machine API keys, an async
-framework auth seam (`Router::authenticated`), and role-based authorization in
-handlers. No toy auth.
+Real token authentication: `argon2id` password hashing (explicit OWASP-2024 cost) with
+a centralized password policy, short-lived JWT access tokens with a rotating
+refresh-token lifecycle, machine-to-machine API keys, an async framework auth seam
+(`Router::authenticated`), and role-based authorization in handlers. No toy auth.
 
 ```
 src/

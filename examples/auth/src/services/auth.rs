@@ -2,7 +2,7 @@ use std::sync::{Arc, OnceLock};
 
 use argon2::password_hash::SaltString;
 use argon2::password_hash::rand_core::OsRng;
-use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
+use argon2::{Algorithm, Argon2, Params, PasswordHash, PasswordHasher, PasswordVerifier, Version};
 use hephos::prelude::*;
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
@@ -19,6 +19,11 @@ use crate::token;
 // Refresh tokens are long-lived; rotation on every use keeps the window of any single
 // leaked token short even though the family can live this long.
 const REFRESH_TTL_DAYS: i64 = 30;
+
+// Password policy (NIST SP 800-63B: favor length, avoid composition rules). The upper
+// bound caps the work argon2 does, so a multi-megabyte "password" can't become a DoS.
+const MIN_PASSWORD_LEN: usize = 12;
+const MAX_PASSWORD_LEN: usize = 1024;
 
 /// Owns registration, login, the token lifecycle, and API-key management. Holds the
 /// verification keyring (read once at startup); `keyring[0]` is the current signing key.
@@ -108,9 +113,7 @@ impl AuthService {
     }
 
     pub async fn register(&self, _ctx: &Ctx, input: Credentials) -> Result<User> {
-        if input.password.len() < 12 {
-            return Err(Error::invalid("password must be at least 12 characters"));
-        }
+        validate_password(&input.password)?;
         let hash = hash_password(&input.password)?;
 
         let mut tx = self.db.begin().await?;
@@ -198,15 +201,41 @@ impl AuthService {
     }
 }
 
+/// The canonical place for password rules. Checked in the service (business rule),
+/// not at the edge (serde only validates shape). Returns [`Error::invalid`].
+fn validate_password(password: &str) -> Result<()> {
+    if password.len() < MIN_PASSWORD_LEN {
+        return Err(Error::invalid(format!(
+            "password must be at least {MIN_PASSWORD_LEN} characters"
+        )));
+    }
+    if password.len() > MAX_PASSWORD_LEN {
+        return Err(Error::invalid(format!(
+            "password must be at most {MAX_PASSWORD_LEN} characters"
+        )));
+    }
+    Ok(())
+}
+
+// OWASP-recommended Argon2id parameters (2024): 19 MiB memory, 2 iterations, 1 lane.
+// They are written into the PHC hash string, so verification reads them back — raising
+// these later strengthens new hashes without invalidating existing ones.
+fn hasher() -> Argon2<'static> {
+    let params = Params::new(19 * 1024, 2, 1, None).expect("argon2 params are valid");
+    Argon2::new(Algorithm::Argon2id, Version::V0x13, params)
+}
+
 fn hash_password(password: &str) -> Result<String> {
     let salt = SaltString::generate(&mut OsRng);
-    Argon2::default()
+    hasher()
         .hash_password(password.as_bytes(), &salt)
         .map(|hash| hash.to_string())
         .map_err(|e| Error::internal(format!("hash password: {e}")))
 }
 
 fn verify_password(password: &str, hash: &str) -> bool {
+    // Verification uses the parameters embedded in the stored hash, so a default
+    // instance is correct regardless of what `hasher()` currently produces.
     match PasswordHash::new(hash) {
         Ok(parsed) => Argon2::default()
             .verify_password(password.as_bytes(), &parsed)
@@ -224,4 +253,32 @@ fn decoy_hash() -> &'static str {
     DECOY
         .get_or_init(|| hash_password("hephos-timing-equalizer").expect("decoy hash is valid"))
         .as_str()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn password_policy_enforces_length_bounds() {
+        assert!(validate_password(&"a".repeat(MIN_PASSWORD_LEN - 1)).is_err());
+        assert!(validate_password(&"a".repeat(MIN_PASSWORD_LEN)).is_ok());
+        assert!(validate_password(&"a".repeat(MAX_PASSWORD_LEN)).is_ok());
+        assert!(validate_password(&"a".repeat(MAX_PASSWORD_LEN + 1)).is_err());
+    }
+
+    #[test]
+    fn hash_roundtrips_and_uses_tuned_argon2id() {
+        let hash = hash_password("correct horse battery").unwrap();
+        // PHC string identifies the algorithm and the parameters we configured.
+        assert!(hash.starts_with("$argon2id$"));
+        assert!(hash.contains("m=19456,t=2,p=1"));
+        assert!(verify_password("correct horse battery", &hash));
+        assert!(!verify_password("wrong password", &hash));
+    }
+
+    #[test]
+    fn verify_rejects_a_malformed_hash() {
+        assert!(!verify_password("whatever", "not-a-phc-hash"));
+    }
 }

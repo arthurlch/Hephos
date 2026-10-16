@@ -40,6 +40,12 @@ All notable changes to Hephos are recorded here. Format follows
   first use) — non-blocking startup, and lets offline tests like the `routes_build`
   canary assemble app state without a live database.
 - `TestClient::delete_with_token` for driving authenticated `DELETE` routes.
+- **Argon2id parameters made explicit** (auth example): OWASP-2024 cost (19 MiB, 2
+  iterations, 1 lane) instead of relying on the library default, with a note that the
+  parameters live in the PHC hash so they can be raised without breaking old hashes.
+- **Canonical password policy** (auth example): a single `validate_password` in the
+  service (NIST 800-63B — length over composition) with a `MAX_PASSWORD_LEN` bound so
+  a huge input can't turn hashing into a DoS. Unit-tested.
 
 ### Fixed (audit remediation)
 - **Unique-violation now maps to `409`, not `500`** — the DB-example repos catch a

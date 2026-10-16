@@ -201,7 +201,10 @@ the create→read and unique-violation→409 flow tests run against a live schem
   first-class production need, not an afterthought. (Required making the auth seam
   async: `Router::authenticated` now takes `Fn(String) -> impl Future`, since key
   resolution is I/O. Added `Db::connect_lazy` so the offline route canary still runs.)
-- `argon2` parameters tuned and documented; password policy hooks.
+- ✅ `argon2` parameters tuned and documented (explicit OWASP-2024 Argon2id cost;
+  parameters live in the PHC hash so they can be raised without breaking old hashes);
+  password policy centralized in `validate_password` (NIST 800-63B length bounds, with
+  a max to cap hashing work).
 - Role/permission checks consolidated (`require_role`, resource-ownership pattern).
 - ✅ Security-headers middleware (HSTS, nosniff, frame-deny) and an opinionated,
   minimal CORS story.
