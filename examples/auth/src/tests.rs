@@ -8,16 +8,20 @@ use hephos::test::TestClient;
 use serde_json::{Value, json};
 
 use crate::api;
+use crate::services::auth::AuthService;
 use crate::state::AppState;
 
 #[tokio::test]
 async fn routes_build() {
-    let _ = api::routes();
+    // Offline: a lazily-connected `AuthService` lets the router assemble without a
+    // database or `JWT_SECRET`, so this composition canary stays in the offline gate.
+    let _ = api::routes(AuthService::offline());
 }
 
 async fn client() -> TestClient {
     let state = AppState::init().await.unwrap();
-    TestClient::new(api::routes(), state)
+    let router = api::routes(state.auth.clone());
+    TestClient::new(router, state)
 }
 
 #[tokio::test]
@@ -159,5 +163,115 @@ async fn logout_with_unknown_token_is_opaque() {
             .await
             .status(),
         204
+    );
+}
+
+/// Promote a registered user to admin directly in the database. The first admin is
+/// always bootstrapped out-of-band; this stands in for that step.
+async fn promote_to_admin(email: &str) {
+    let url = std::env::var("DATABASE_URL").unwrap();
+    let pool = sqlx::PgPool::connect(&url).await.unwrap();
+    sqlx::query("update users set roles = array['admin'] where email = $1")
+        .bind(email)
+        .execute(&pool)
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres, migrations, and JWT_SECRET"]
+async fn admin_mints_api_key_that_authenticates_then_is_revoked() {
+    let client = client().await;
+
+    // Bootstrap an admin, then log in so the access token carries the admin role.
+    let admin = json!({ "email": "svc-admin@example.com", "password": "correct horse battery" });
+    assert_eq!(
+        client.post_json("/auth/register", &admin).await.status(),
+        200
+    );
+    promote_to_admin("svc-admin@example.com").await;
+    let (admin_access, _) = tokens(
+        &client
+            .post_json("/auth/login", &admin)
+            .await
+            .json::<Value>(),
+    );
+
+    // A target user the key will read.
+    let target = json!({ "email": "target@example.com", "password": "correct horse battery" });
+    let target_id = client
+        .post_json("/auth/register", &target)
+        .await
+        .json::<Value>()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Admin mints an admin-scoped API key; the raw key is returned once.
+    let created = client
+        .post_json_with_token(
+            "/api-keys",
+            &admin_access,
+            &json!({ "name": "ci-runner", "roles": ["admin"] }),
+        )
+        .await;
+    assert_eq!(created.status(), 200);
+    let created = created.json::<Value>();
+    let api_key = created["api_key"].as_str().unwrap().to_string();
+    let key_id = created["id"].as_str().unwrap().to_string();
+    assert!(api_key.starts_with("hephos_sk_"));
+
+    // The API key resolves to the same Identity (admin scope): it can read any user.
+    assert_eq!(
+        client
+            .get_with_token(&format!("/users/{target_id}"), &api_key)
+            .await
+            .status(),
+        200
+    );
+
+    // Revoke it; the key no longer authenticates.
+    assert_eq!(
+        client
+            .delete_with_token(&format!("/api-keys/{key_id}"), &admin_access)
+            .await
+            .status(),
+        204
+    );
+    assert_eq!(
+        client
+            .get_with_token(&format!("/users/{target_id}"), &api_key)
+            .await
+            .status(),
+        401
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres, migrations, and JWT_SECRET"]
+async fn non_admin_cannot_mint_api_key() {
+    let client = client().await;
+    let creds = json!({ "email": "plain@example.com", "password": "correct horse battery" });
+    assert_eq!(
+        client.post_json("/auth/register", &creds).await.status(),
+        200
+    );
+    let (access, _) = tokens(
+        &client
+            .post_json("/auth/login", &creds)
+            .await
+            .json::<Value>(),
+    );
+
+    assert_eq!(
+        client
+            .post_json_with_token(
+                "/api-keys",
+                &access,
+                &json!({ "name": "nope", "roles": [] })
+            )
+            .await
+            .status(),
+        403
     );
 }

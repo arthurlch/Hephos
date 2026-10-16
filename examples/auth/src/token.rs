@@ -11,6 +11,11 @@ use crate::domain::user::Claims;
 // a leaked access token is only useful for a few minutes.
 const TTL_SECONDS: i64 = 900;
 
+/// Prefix on every opaque API key. It lets the auth seam distinguish a machine key
+/// from a user JWT without a database round-trip (a JWT is dot-separated base64url and
+/// never starts with this).
+pub const API_KEY_PREFIX: &str = "hephos_sk_";
+
 /// Sign a short-lived access token for an authenticated user.
 pub fn issue(secret: &[u8], id: Uuid, roles: Vec<String>) -> Result<String> {
     let exp = (OffsetDateTime::now_utc().unix_timestamp() + TTL_SECONDS) as u64;
@@ -52,13 +57,25 @@ pub fn new_refresh_token() -> (String, String) {
     let mut bytes = [0u8; 32];
     OsRng.fill_bytes(&mut bytes);
     let raw = to_hex(&bytes);
-    let hash = hash_refresh_token(&raw);
+    let hash = hash_opaque_token(&raw);
     (raw, hash)
 }
 
-/// Hash a presented refresh token for a constant-shape lookup against the stored hash.
-/// The token is high-entropy random, so a fast digest (not a password KDF) is correct.
-pub fn hash_refresh_token(raw: &str) -> String {
+/// Mint a new opaque API key, `hephos_sk_<64 hex>`. Returns `(raw, hash)` — the raw
+/// key is shown to the caller once; only the hash is stored. The [`API_KEY_PREFIX`]
+/// lets the auth seam route it to the key store instead of JWT verification.
+pub fn new_api_key() -> (String, String) {
+    let mut bytes = [0u8; 32];
+    OsRng.fill_bytes(&mut bytes);
+    let raw = format!("{API_KEY_PREFIX}{}", to_hex(&bytes));
+    let hash = hash_opaque_token(&raw);
+    (raw, hash)
+}
+
+/// Hash a presented opaque token (refresh token or API key) for a constant-shape
+/// lookup against the stored hash. The token is high-entropy random, so a fast digest
+/// (not a password KDF) is correct.
+pub fn hash_opaque_token(raw: &str) -> String {
     to_hex(&Sha256::digest(raw.as_bytes()))
 }
 
@@ -93,7 +110,7 @@ mod tests {
     fn refresh_token_hash_is_stable_and_not_the_raw_token() {
         let (raw, hash) = new_refresh_token();
         assert_ne!(raw, hash);
-        assert_eq!(hash, hash_refresh_token(&raw));
+        assert_eq!(hash, hash_opaque_token(&raw));
         // 32 random bytes and a SHA-256 digest both hex-encode to 64 chars.
         assert_eq!(raw.len(), 64);
         assert_eq!(hash.len(), 64);
@@ -104,6 +121,17 @@ mod tests {
         let (a, _) = new_refresh_token();
         let (b, _) = new_refresh_token();
         assert_ne!(a, b);
+    }
+
+    #[test]
+    fn api_key_is_prefixed_and_hashed() {
+        let (raw, hash) = new_api_key();
+        assert!(raw.starts_with(API_KEY_PREFIX));
+        assert_ne!(raw, hash);
+        assert_eq!(hash, hash_opaque_token(&raw));
+        // Prefix + 64 hex chars; the stored hash is a 64-char SHA-256 digest.
+        assert_eq!(raw.len(), API_KEY_PREFIX.len() + 64);
+        assert_eq!(hash.len(), 64);
     }
 
     #[test]

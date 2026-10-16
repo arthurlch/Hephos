@@ -100,6 +100,31 @@ impl Db {
         Ok(Db { pool })
     }
 
+    /// Build a pool **without** opening a connection — SQLx connects lazily on first
+    /// use. Startup never blocks on the database, and offline tests (e.g. the
+    /// `routes_build` canary) can construct application state without a live server.
+    /// The server-side statement timeout is still installed on each connection when it
+    /// is actually opened. Only the URL is parsed here, so this fails only on a
+    /// malformed `url`.
+    pub fn connect_lazy(url: &str) -> Result<Self> {
+        let config = PoolConfig::default();
+        let statement_timeout_ms = (config.statement_timeout.as_millis() as u64).max(1);
+        let pool = PgPoolOptions::new()
+            .max_connections(config.max_connections)
+            .acquire_timeout(config.acquire_timeout)
+            .after_connect(move |conn, _meta| {
+                Box::pin(async move {
+                    sqlx::query(&format!("SET statement_timeout = {statement_timeout_ms}"))
+                        .execute(conn)
+                        .await?;
+                    Ok(())
+                })
+            })
+            .connect_lazy(url)
+            .map_err(into_internal)?;
+        Ok(Db { pool })
+    }
+
     /// The pool, for read queries and single-statement writes:
     /// `UserRepo::find(db.pool(), id).await?`.
     pub fn pool(&self) -> &PgPool {
@@ -308,5 +333,14 @@ mod tests {
         assert_eq!(c.max_connections, 16);
         assert_eq!(c.acquire_timeout, Duration::from_secs(10));
         assert_eq!(c.statement_timeout, Duration::from_secs(30));
+    }
+
+    // A Tokio context is required: the lazy pool spawns a background maintenance task.
+    #[tokio::test]
+    async fn connect_lazy_builds_without_a_server_and_rejects_bad_urls() {
+        // No connection is opened, so a well-formed URL succeeds even offline.
+        assert!(Db::connect_lazy("postgres://user@localhost/db").is_ok());
+        // Only the URL is parsed here, so a malformed one is the one failure mode.
+        assert!(Db::connect_lazy("not-a-url").is_err());
     }
 }

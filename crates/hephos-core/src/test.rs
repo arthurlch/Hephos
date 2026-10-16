@@ -115,6 +115,20 @@ impl TestClient {
         .await
     }
 
+    /// `DELETE` with an `Authorization: Bearer` header, for testing protected
+    /// delete routes.
+    pub async fn delete_with_token(&self, path: &str, token: &str) -> TestResponse {
+        self.send(
+            Request::builder()
+                .method("DELETE")
+                .uri(path)
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+    }
+
     /// `POST` a JSON body with an `Authorization: Bearer` header.
     pub async fn post_json_with_token<T: Serialize>(
         &self,

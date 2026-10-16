@@ -33,6 +33,23 @@ pub struct RefreshRequest {
     pub refresh_token: String,
 }
 
+/// Request to mint a machine-to-machine API key. `roles` are the scopes the key
+/// carries when it authenticates.
+#[derive(Debug, Clone, Deserialize)]
+pub struct CreateApiKey {
+    pub name: String,
+    #[serde(default)]
+    pub roles: Vec<String>,
+}
+
+/// The one-time response when an API key is created: the raw `hephos_sk_…` value is
+/// shown here and never again (only its hash is stored).
+#[derive(Debug, Clone, Serialize)]
+pub struct ApiKeyCreated {
+    pub id: Uuid,
+    pub api_key: String,
+}
+
 /// JWT claims. `sub` is the user id; `roles` drives authorization; `exp` is the
 /// expiry (seconds since epoch).
 #[derive(Debug, Clone, Serialize, Deserialize)]

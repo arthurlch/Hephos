@@ -98,17 +98,24 @@ where
 
     /// Require authentication for every route in this router.
     ///
-    /// `verify` turns a bearer token into an [`Identity`] (a stateless JWT
-    /// verification: signature + claims → id + roles). A missing token, or a
-    /// token `verify` rejects, produces a `401` before any handler runs. Handlers
-    /// then read the resolved identity via `ctx` and may narrow further with
+    /// `verify` turns a bearer token into an [`Identity`]. It is **async**, because
+    /// real authentication needs I/O: a stateless JWT check returns immediately, but
+    /// resolving an opaque API key or checking a revocation list is a database lookup.
+    /// `verify` captures whatever it needs to do that (a signing keyring, a credential
+    /// store) — typically a service cloned into the closure.
+    ///
+    /// A missing token, or a token `verify` rejects with [`Error::Unauthorized`],
+    /// produces a `401` before any handler runs. An [`Error::Internal`] from `verify`
+    /// (e.g. the credential store is down) surfaces as `500`, not a misleading `401`.
+    /// Handlers then read the resolved identity via `ctx` and may narrow further with
     /// `ctx.require_role(..)`.
     ///
     /// This is the one canonical way application code applies authentication —
     /// it wraps the group, so individual handlers never parse auth headers.
-    pub fn authenticated<F>(mut self, verify: F) -> Self
+    pub fn authenticated<F, Fut>(mut self, verify: F) -> Self
     where
-        F: Fn(&str) -> Result<Identity> + Clone + Send + Sync + 'static,
+        F: Fn(String) -> Fut + Clone + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<Identity>> + Send + 'static,
     {
         let middleware = axum::middleware::from_fn(
             move |mut request: axum::extract::Request, next: axum::middleware::Next| {
@@ -118,10 +125,11 @@ where
                         .headers()
                         .get(AUTHORIZATION)
                         .and_then(|value| value.to_str().ok())
-                        .and_then(bearer_token);
+                        .and_then(bearer_token)
+                        .map(str::to_owned);
 
                     match token {
-                        Some(token) => match verify(token) {
+                        Some(token) => match verify(token).await {
                             Ok(identity) => {
                                 request.extensions_mut().insert(identity);
                                 next.run(request).await

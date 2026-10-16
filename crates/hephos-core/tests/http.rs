@@ -32,8 +32,10 @@ async fn admin(ctx: Ctx<S>) -> Result<Json<&'static str>> {
     Ok(Json("secret"))
 }
 
-fn verify(token: &str) -> Result<Identity> {
-    match token {
+// The seam is async; this resolver returns a ready result, standing in for a real
+// JWT/API-key verifier (which would await a signature check or credential lookup).
+async fn verify(token: String) -> Result<Identity> {
+    match token.as_str() {
         "admin" => Ok(Identity::User(Principal {
             id: Uuid::nil(),
             roles: vec!["admin".into()],

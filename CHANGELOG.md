@@ -27,6 +27,19 @@ All notable changes to Hephos are recorded here. Format follows
 - **Auth-seam token-length cap** (`MAX_TOKEN_LEN`, 4 KiB): the bearer extractor
   rejects oversized credentials before `verify` runs, so a caller cannot force
   signature checks or credential-store lookups on pathologically large input.
+- **Machine-to-machine API keys** (auth example): hashed, scoped, revocable keys
+  resolved to the same `Identity` as a user JWT. `POST /api-keys` (admin-only) mints a
+  one-time `hephos_sk_…` key with roles; `DELETE /api-keys/{id}` revokes it. Only the
+  SHA-256 hash is stored; the prefix lets the seam route a key to the store vs. JWT
+  verification. New table `api_keys` (migration `0003`).
+- **The auth seam is now async** (framework contract): `Router::authenticated` takes
+  `Fn(String) -> impl Future<Output = Result<Identity>>`, because resolving an API key
+  or checking a revocation list is I/O. A stateless JWT check just returns ready. The
+  verify closure captures its dependencies (keyring, credential store).
+- `Db::connect_lazy(url)`: build a pool without opening a connection (SQLx connects on
+  first use) — non-blocking startup, and lets offline tests like the `routes_build`
+  canary assemble app state without a live database.
+- `TestClient::delete_with_token` for driving authenticated `DELETE` routes.
 
 ### Fixed (audit remediation)
 - **Unique-violation now maps to `409`, not `500`** — the DB-example repos catch a

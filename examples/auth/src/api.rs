@@ -1,23 +1,23 @@
 pub mod auth;
+pub mod keys;
 pub mod users;
 
 use hephos::prelude::*;
 
+use crate::services::auth::AuthService;
 use crate::state::AppState;
 
-pub fn routes() -> Router<AppState> {
-    // Verification keyring, read once at startup (AppState::init already validated the
-    // current secret is set). `JWT_SECRET` is the current signing key; set
-    // `JWT_SECRET_PREVIOUS` during a rotation so tokens signed with the old key keep
-    // verifying until it is retired.
-    let mut keyring = vec![std::env::var("JWT_SECRET").unwrap_or_default().into_bytes()];
-    if let Ok(previous) = std::env::var("JWT_SECRET_PREVIOUS") {
-        if !previous.is_empty() {
-            keyring.push(previous.into_bytes());
-        }
-    }
-    let protected =
-        users::routes().authenticated(move |token| crate::token::verify(&keyring, token));
+/// Build the router. Takes the `AuthService` so the authenticated group's verify
+/// closure can resolve both user JWTs and machine API keys against it; the handlers
+/// themselves reach state through `ctx` at request time. Keeping this the only
+/// build-time dependency lets the `routes_build` canary run offline.
+pub fn routes(auth: AuthService) -> Router<AppState> {
+    let protected = users::routes()
+        .merge(keys::routes())
+        .authenticated(move |token| {
+            let auth = auth.clone();
+            async move { auth.authenticate(&token).await }
+        });
 
     Router::new().merge(auth::routes()).merge(protected)
 }
