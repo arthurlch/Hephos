@@ -23,3 +23,7 @@ Flow:
 
 Requires Postgres and `JWT_SECRET`. Run:
 `DATABASE_URL=… JWT_SECRET=… cargo run -p example-auth`
+
+**Key rotation:** to rotate the signing key without downtime, set the new key as
+`JWT_SECRET` and the old one as `JWT_SECRET_PREVIOUS`. New tokens are signed with the
+current key; tokens signed with either key verify until you drop `JWT_SECRET_PREVIOUS`.
