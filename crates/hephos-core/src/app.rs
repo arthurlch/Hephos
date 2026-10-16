@@ -91,6 +91,7 @@ where
             timeout: config.timeout,
             body_limit: config.body_limit,
             hsts: config.hsts,
+            cors_origins: config.cors_origins.clone(),
         };
         let app = stack::apply(self.router.into_inner(), stack_config, shutdown.clone())
             .with_state(state);

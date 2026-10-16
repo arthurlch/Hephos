@@ -186,6 +186,9 @@ The **standard middleware stack** is fixed and identical in every app, implement
 once in `hephos-core::stack` and installed by `App::run`. In order, outermost to
 innermost:
 
+0. **CORS** (only when `HEPHOS_CORS_ORIGINS` is set) — outermost, so a preflight
+   `OPTIONS` is answered before anything else runs. Off by default (same-origin); an
+   opinionated allow-list, no credentials.
 1. **Observe** — generate a request-id UUID, insert it and a default
    `Identity::Anonymous` into extensions, open a request span (method, path, id), echo
    the id back as the `x-request-id` response header, and set baseline security headers
@@ -522,7 +525,7 @@ derived from).
 
 Minimal and decentralized by ownership. `hephos-core::Config` reads only the small
 fixed set the framework itself needs (`HEPHOS_ADDR`, `HEPHOS_LOG`, `HEPHOS_TIMEOUT_SECS`,
-`HEPHOS_BODY_LIMIT`, `HEPHOS_HSTS`). Each component reads its
+`HEPHOS_BODY_LIMIT`, `HEPHOS_HSTS`, `HEPHOS_CORS_ORIGINS`). Each component reads its
 own config from the environment where it is constructed (`Db` reads
 `DATABASE_URL`; a provider reads `ANTHROPIC_API_KEY`). There is no central config
 object threaded through the app. Secrets live in the environment, are never logged,
