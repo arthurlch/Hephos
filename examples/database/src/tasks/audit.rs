@@ -1,9 +1,10 @@
 use hephos::prelude::*;
+use tokio::sync::broadcast::error::RecvError;
 
 use crate::state::{AppEvent, AppState};
 
-/// Consumes AppEvent in the background. A lagged receiver resyncs from the source
-/// of truth rather than panicking — the bus is best-effort by design.
+/// Consumes AppEvent in the background. A lagged receiver resyncs from the source of
+/// truth rather than panicking — the bus is best-effort by design.
 pub struct AuditLog;
 
 impl Task<AppState> for AuditLog {
@@ -18,7 +19,10 @@ impl Task<AppState> for AuditLog {
                 _ = ctx.cancel_token().cancelled() => break,
                 event = rx.recv() => match event {
                     Ok(AppEvent::UserCreated { id }) => tracing::info!(%id, "user created"),
-                    Err(_) => continue,
+                    // Lagged is recoverable (resync from source of truth); Closed is
+                    // terminal — break, or `recv()` returns immediately and busy-loops.
+                    Err(RecvError::Lagged(skipped)) => tracing::warn!(%skipped, "audit lagged"),
+                    Err(RecvError::Closed) => break,
                 }
             }
         }

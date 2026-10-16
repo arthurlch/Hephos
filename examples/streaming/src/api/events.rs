@@ -11,8 +11,9 @@ pub fn routes() -> Router<AppState> {
     Router::new().get("/events", stream)
 }
 
-/// Emit ten ticks, one per second, then end. Production stops early if the client
-/// disconnects or the server shuts down (both fire the cancellation token).
+/// Emit ten events (the first immediately, then ~one per second) and end. On server
+/// shutdown the token fires and the stream stops; on client disconnect the runtime
+/// drops this stream, which also stops production.
 pub async fn stream(ctx: Ctx) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let body = async_stream::stream! {
         let mut tick = tokio::time::interval(Duration::from_secs(1));

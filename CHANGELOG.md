@@ -5,6 +5,22 @@ All notable changes to Hephos are recorded here. Format follows
 
 ## [Unreleased]
 
+### Fixed (audit remediation)
+- **Unique-violation now maps to `409`, not `500`** — the DB-example repos catch a
+  Postgres `23505` via the new `hephos::db::is_unique_violation` and return
+  `Error::conflict` (the `find`-then-`insert` pre-check was racy under concurrency).
+- **Agent `Limits.timeout` is now enforced** — the turn loop is wrapped in
+  `tokio::time::timeout`; a hung model/tool call ends the run with an error.
+- **Oversized bodies report `413`** — a new `Error::PayloadTooLarge`; the `Json`
+  extractor maps a length-limit rejection to `413` instead of downgrading it to `400`.
+- **Audit-task busy-loop fixed** — the example task now `break`s on `Closed` and only
+  `continue`s on `Lagged` (previously spun the CPU on a closed channel).
+- Bearer scheme parsed case-insensitively (RFC 7235); shutdown drains tasks against a
+  single shared deadline (not N× per task); `statement_timeout` clamped to ≥1 ms (0
+  disables it in Postgres); `TestDb` drops its database if setup fails; `split_server`
+  rejects malformed `DATABASE_URL`; auth `exp` widened to `u64`; WS/SSE docs corrected
+  to not overstate disconnect-cancellation.
+
 ### Added (0.0.3 — Database, for real)
 - `Db::migrate(&Migrator)` runs embedded migrations (idempotent); the DB examples
   self-migrate in `AppState::init` via `sqlx::migrate!("./migrations")`.

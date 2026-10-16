@@ -78,7 +78,15 @@ where
 // Bad input is a client error, but the raw deserializer text (field names, expected
 // tokens, positions) is internal detail. Log it for debugging; return a fixed,
 // safe-to-expose message so the response leaks nothing about the schema.
+//
+// A body that exceeds the stack's limit surfaces here (as a length-limit rejection)
+// when there is no `Content-Length` for the body-limit layer to short-circuit on. Map
+// it to `413` so an oversized body reports the same status however it arrives, rather
+// than being silently downgraded to `400`.
 fn map_json(rejection: JsonRejection) -> Error {
+    if rejection.status() == axum::http::StatusCode::PAYLOAD_TOO_LARGE {
+        return Error::PayloadTooLarge;
+    }
     tracing::debug!(detail = %rejection.body_text(), "rejected JSON body");
     Error::invalid("request body is not valid JSON for this endpoint")
 }

@@ -29,5 +29,5 @@ pub struct TokenResponse {
 pub struct Claims {
     pub sub: Uuid,
     pub roles: Vec<String>,
-    pub exp: usize,
+    pub exp: u64,
 }

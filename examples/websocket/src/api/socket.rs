@@ -11,17 +11,18 @@ pub fn routes() -> Router<AppState> {
 }
 
 /// Upgrade handler: takes `Ctx` like every handler, then hands the socket to the
-/// connection loop. The `Ctx` carries the cancellation token, so the connection
-/// is tied to request and server lifecycle.
+/// connection loop. `Ctx`'s token cancels on **server shutdown**; **client
+/// disconnect** is observed separately, as an error/`None` from the socket I/O.
 pub async fn connect(ctx: Ctx, upgrade: WebSocketUpgrade) -> Response {
     upgrade.on_upgrade(move |socket| handle(ctx, socket))
 }
 
 /// One connection, one loop, no spawned tasks. The socket is split so reads and
 /// writes own separate halves; the loop selects over incoming frames, a heartbeat,
-/// and cancellation. Backpressure is the awaited `sink.send`: when the client
-/// cannot keep up, the send blocks the loop, which stops reading — flow control
-/// without an unbounded queue.
+/// and shutdown. The connection ends on: shutdown (token), client close/disconnect
+/// (`None`/`Err` from the stream, or a failed `sink.send`), or a receive error.
+/// Backpressure is the awaited `sink.send`: when the client cannot keep up, the send
+/// blocks the loop, which stops reading — flow control without an unbounded queue.
 async fn handle(ctx: Ctx, socket: WebSocket) {
     let (mut sink, mut stream) = socket.split();
     let mut heartbeat = tokio::time::interval(Duration::from_secs(15));

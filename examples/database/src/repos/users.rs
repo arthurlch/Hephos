@@ -35,13 +35,22 @@ impl UserRepo {
     }
 
     pub async fn create<'e, E: PgExecutor<'e>>(exec: E, input: &CreateUser) -> Result<User> {
+        // The unique index on `email` is the real guarantee: a lost insert race maps
+        // to `409 Conflict`, not a `500`. The service's pre-check is just a fast path.
         let user = sqlx::query_as!(
             User,
             "insert into users (email) values ($1) returning id, email, created_at",
             input.email
         )
         .fetch_one(exec)
-        .await?;
+        .await
+        .map_err(|e| {
+            if hephos::db::is_unique_violation(&e) {
+                Error::conflict("email already registered")
+            } else {
+                e.into()
+            }
+        })?;
         Ok(user)
     }
 }

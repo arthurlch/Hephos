@@ -41,6 +41,28 @@ async fn migrate_creates_schema_and_repo_roundtrips() {
     test_db.cleanup().await.unwrap();
 }
 
+/// A duplicate email hits the unique index and must map to `Conflict` (409), not a
+/// generic 500 — the guarantee the `find`-then-`insert` pre-check can't provide under
+/// concurrency.
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn duplicate_email_is_conflict() {
+    let test_db = TestDb::create(&sqlx::migrate!("./migrations"))
+        .await
+        .unwrap();
+    let input = CreateUser {
+        email: "dup@example.com".into(),
+    };
+
+    UserRepo::create(test_db.db().pool(), &input).await.unwrap();
+    let err = UserRepo::create(test_db.db().pool(), &input)
+        .await
+        .unwrap_err();
+    assert!(matches!(err, hephos::Error::Conflict(_)));
+
+    test_db.cleanup().await.unwrap();
+}
+
 async fn client() -> TestClient {
     let state = AppState::init().await.unwrap();
     TestClient::new(api::routes(), state)
