@@ -160,16 +160,23 @@ where
     }
 }
 
+/// An upper bound on an accepted bearer credential. Real tokens (JWTs with roles,
+/// opaque API keys) are well under 4 KiB; anything larger is rejected before `verify`
+/// runs, so a caller can't force signature checks or credential-store lookups on
+/// pathologically large input.
+const MAX_TOKEN_LEN: usize = 4096;
+
 /// Extract the credential from an `Authorization` header value, accepting the
 /// `Bearer` scheme case-insensitively (RFC 7235 schemes are case-insensitive).
-/// Returns `None` for a missing/empty credential or a different scheme.
+/// Returns `None` for a missing/empty credential, a different scheme, or a credential
+/// longer than [`MAX_TOKEN_LEN`].
 fn bearer_token(header: &str) -> Option<&str> {
     let (scheme, credential) = header.split_once(' ')?;
     if !scheme.eq_ignore_ascii_case("bearer") {
         return None;
     }
     let token = credential.trim();
-    (!token.is_empty()).then_some(token)
+    (!token.is_empty() && token.len() <= MAX_TOKEN_LEN).then_some(token)
 }
 
 #[cfg(test)]
@@ -192,6 +199,14 @@ mod tests {
         assert_eq!(bearer_token("Basic abc"), None);
         assert_eq!(bearer_token("Bearer "), None);
         assert_eq!(bearer_token("abc"), None);
+    }
+
+    #[test]
+    fn rejects_oversized_tokens() {
+        let ok = "a".repeat(MAX_TOKEN_LEN);
+        assert_eq!(bearer_token(&format!("Bearer {ok}")), Some(ok.as_str()));
+        let too_long = "a".repeat(MAX_TOKEN_LEN + 1);
+        assert_eq!(bearer_token(&format!("Bearer {too_long}")), None);
     }
 
     #[test]
