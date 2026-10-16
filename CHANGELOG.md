@@ -9,6 +9,9 @@ All notable changes to Hephos are recorded here. Format follows
 - **Baseline security headers** on every response, set by the standard stack:
   `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy:
   no-referrer`. `Strict-Transport-Security` is opt-in via `HEPHOS_HSTS` (TLS only).
+- **CORS** via `HEPHOS_CORS_ORIGINS` (comma-separated allow-list, or `*`). Off by
+  default (same-origin); an opinionated minimal layer (standard methods +
+  `content-type`/`authorization`, no credentials), preflight handled outermost.
 
 ### Fixed (audit remediation)
 - **Unique-violation now maps to `409`, not `500`** — the DB-example repos catch a

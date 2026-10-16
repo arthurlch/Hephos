@@ -17,6 +17,7 @@ use crate::error::{Error, Result};
 /// | `HEPHOS_TIMEOUT_SECS` | `30`           | Per-request response-generation timeout. |
 /// | `HEPHOS_BODY_LIMIT`   | `2097152`      | Max request body size, in bytes (2 MiB). |
 /// | `HEPHOS_HSTS`         | `off`          | Send `Strict-Transport-Security` (only behind TLS). |
+/// | `HEPHOS_CORS_ORIGINS` | *(unset)*      | Comma-separated allowed origins, or `*`. Unset = no CORS. |
 #[derive(Debug, Clone)]
 pub struct Config {
     pub addr: SocketAddr,
@@ -31,6 +32,9 @@ pub struct Config {
     /// sense when the app is served over TLS, and setting it over plain HTTP (or with
     /// a wrong max-age) can lock clients out of the domain.
     pub hsts: bool,
+    /// Allowed CORS origins. `None` means no CORS layer (same-origin only, the safe
+    /// default). `Some(["*"])` allows any origin; otherwise an explicit allow-list.
+    pub cors_origins: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,6 +54,7 @@ impl Config {
             std::env::var("HEPHOS_TIMEOUT_SECS").ok().as_deref(),
             std::env::var("HEPHOS_BODY_LIMIT").ok().as_deref(),
             std::env::var("HEPHOS_HSTS").ok().as_deref(),
+            std::env::var("HEPHOS_CORS_ORIGINS").ok().as_deref(),
         )
     }
 
@@ -62,6 +67,7 @@ impl Config {
         timeout_secs: Option<&str>,
         body_limit: Option<&str>,
         hsts: Option<&str>,
+        cors_origins: Option<&str>,
     ) -> Result<Self> {
         let addr = match addr {
             Some(value) => value.parse().map_err(|_| {
@@ -104,12 +110,23 @@ impl Config {
             Some("1" | "on" | "true" | "yes")
         );
 
+        let cors_origins = cors_origins.and_then(|value| {
+            let origins: Vec<String> = value
+                .split(',')
+                .map(str::trim)
+                .filter(|o| !o.is_empty())
+                .map(str::to_owned)
+                .collect();
+            (!origins.is_empty()).then_some(origins)
+        });
+
         Ok(Config {
             addr,
             log,
             timeout,
             body_limit,
             hsts,
+            cors_origins,
         })
     }
 }
@@ -118,14 +135,19 @@ impl Config {
 mod tests {
     use super::*;
 
+    fn parse(hsts: Option<&str>, cors: Option<&str>) -> Result<Config> {
+        Config::parse(None, None, None, None, hsts, cors)
+    }
+
     #[test]
     fn defaults_when_unset() {
-        let config = Config::parse(None, None, None, None, None).unwrap();
+        let config = Config::parse(None, None, None, None, None, None).unwrap();
         assert_eq!(config.addr.port(), 8080);
         assert_eq!(config.log, LogFormat::Pretty);
         assert_eq!(config.timeout, Duration::from_secs(30));
         assert_eq!(config.body_limit, 2 * 1024 * 1024);
         assert!(!config.hsts);
+        assert_eq!(config.cors_origins, None);
     }
 
     #[test]
@@ -136,6 +158,7 @@ mod tests {
             Some("5"),
             Some("1024"),
             Some("on"),
+            Some("https://a.example, https://b.example"),
         )
         .unwrap();
         assert_eq!(config.addr.port(), 9000);
@@ -143,47 +166,55 @@ mod tests {
         assert_eq!(config.timeout, Duration::from_secs(5));
         assert_eq!(config.body_limit, 1024);
         assert!(config.hsts);
+        assert_eq!(
+            config.cors_origins.as_deref(),
+            Some(
+                [
+                    "https://a.example".to_string(),
+                    "https://b.example".to_string()
+                ]
+                .as_slice()
+            )
+        );
     }
 
     #[test]
     fn hsts_is_lenient_boolean() {
-        assert!(
-            Config::parse(None, None, None, None, Some("TRUE"))
-                .unwrap()
-                .hsts
+        assert!(parse(Some("TRUE"), None).unwrap().hsts);
+        assert!(parse(Some("1"), None).unwrap().hsts);
+        assert!(!parse(Some("off"), None).unwrap().hsts);
+    }
+
+    #[test]
+    fn cors_origins_parse_and_trim() {
+        assert_eq!(
+            parse(None, Some(" * ")).unwrap().cors_origins.as_deref(),
+            Some(["*".to_string()].as_slice())
         );
-        assert!(
-            Config::parse(None, None, None, None, Some("1"))
-                .unwrap()
-                .hsts
-        );
-        assert!(
-            !Config::parse(None, None, None, None, Some("off"))
-                .unwrap()
-                .hsts
-        );
+        assert_eq!(parse(None, Some("  ")).unwrap().cors_origins, None);
+        assert_eq!(parse(None, None).unwrap().cors_origins, None);
     }
 
     #[test]
     fn rejects_bad_addr() {
-        let err = Config::parse(Some("not-an-addr"), None, None, None, None).unwrap_err();
+        let err = Config::parse(Some("not-an-addr"), None, None, None, None, None).unwrap_err();
         assert!(matches!(err, Error::Invalid(_)));
     }
 
     #[test]
     fn rejects_bad_log_format() {
-        let err = Config::parse(None, Some("verbose"), None, None, None).unwrap_err();
+        let err = Config::parse(None, Some("verbose"), None, None, None, None).unwrap_err();
         assert!(matches!(err, Error::Invalid(_)));
     }
 
     #[test]
     fn rejects_bad_timeout_and_body_limit() {
         assert!(matches!(
-            Config::parse(None, None, Some("soon"), None, None).unwrap_err(),
+            Config::parse(None, None, Some("soon"), None, None, None).unwrap_err(),
             Error::Invalid(_)
         ));
         assert!(matches!(
-            Config::parse(None, None, None, Some("huge"), None).unwrap_err(),
+            Config::parse(None, None, None, Some("huge"), None, None).unwrap_err(),
             Error::Invalid(_)
         ));
     }

@@ -587,7 +587,8 @@ its target. Where the honest answer is "an operator/vendor concern," Hephos ship
 | Health & probes | `/health` (live), `/ready` (DB-aware), startup gate | `0.2.0` |
 | Rate limiting / abuse | `tower-governor` (GCRA), per-key quotas | `0.2.0` |
 | Security headers | ✅ baseline (nosniff, frame-deny, referrer-policy) always on; HSTS via `HEPHOS_HSTS` | ✅ `0.0.4` |
-| CORS / CSRF | one opinionated, minimal, documented config | `0.0.4` |
+| CORS | ✅ opt-in allow-list via `HEPHOS_CORS_ORIGINS` (off by default) | ✅ `0.0.4` |
+| CSRF | documented guidance (bearer-token APIs are not cookie-CSRF-prone) | `0.0.4` |
 | Caching | response + data cache seam (in-proc default; external seam) | `0.2.0` |
 | Config & feature flags | env-first typed config; a simple flag seam | `0.0.2`/`0.3.0` |
 | Secrets management | env/file + pluggable provider seam; never logged | `0.8.0` |
