@@ -90,6 +90,7 @@ where
         let stack_config = StackConfig {
             timeout: config.timeout,
             body_limit: config.body_limit,
+            hsts: config.hsts,
         };
         let app = stack::apply(self.router.into_inner(), stack_config, shutdown.clone())
             .with_state(state);

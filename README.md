@@ -116,13 +116,22 @@ pattern and a copy-ready example.
 ## Status — pre-alpha scaffold
 
 Honest about where this is: the **doctrine, the public API contract, the reference
-examples, and the project tooling** are in place. As of `0.0.2` the **HTTP core is
-real** — the standard middleware stack (request-id + `x-request-id`, tracing span,
-request timeout, body limit, shutdown-linked cancellation), graceful shutdown, a
-finalized `Config`, and the `TestClient` harness — all exercised by tests and by
-running the servers. The remaining runtime subsystems (DB migrations, model provider
-clients, agent tool dispatch, MCP serving) are still marked `// BOUNDARY:` — designed,
-contracted, not yet implemented.
+examples, and the project tooling** are in place, and progress is incremental and
+CI-gated. Real so far:
+
+- **`0.0.2` HTTP core** — the standard middleware stack (request-id + `x-request-id`,
+  tracing span, request timeout, body limit, baseline security headers,
+  shutdown-linked cancellation), graceful shutdown, `Config`, and `TestClient`.
+- **`0.0.3` database** — `Db::migrate`, env-tuned pool (acquire + statement timeouts),
+  and a disposable-DB test fixture; the DB examples run against live Postgres in CI.
+- **`0.0.4` auth hardening (in progress)** — baseline security headers shipped;
+  refresh/revocation, API keys, and CORS next.
+
+A full adversarial code audit (4 parallel reviewers) has been run and its findings
+remediated (e.g. unique-violation now maps to `409`, the agent run has a wall-clock
+timeout). The remaining runtime subsystems (model provider clients, agent tool
+dispatch, MCP serving) are still marked `// BOUNDARY:` — designed, contracted, not
+yet implemented.
 
 This is **not yet a functional `0.1.0`**; it is a consolidated base being built toward
 one. The full, versioned path to a production-ready `1.0` — including a
