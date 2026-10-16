@@ -17,6 +17,8 @@ async-stream = { workspace = true }
 reqwest = { workspace = true }
 tracing = { workspace = true }
 anyhow = { workspace = true }
+# For the agent run's wall-clock timeout (`Limits.timeout`).
+tokio = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }

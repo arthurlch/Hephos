@@ -80,7 +80,9 @@ impl Db {
     /// Connect with explicit pool config. Installs the server-side statement timeout
     /// on every connection, so one pathological query cannot pin a connection.
     pub async fn connect_with(url: &str, config: PoolConfig) -> Result<Self> {
-        let statement_timeout_ms = config.statement_timeout.as_millis() as u64;
+        // Clamp to ≥1ms: Postgres treats `statement_timeout = 0` as *disabled*, the
+        // opposite of the intent, which a sub-millisecond `Duration` would trigger.
+        let statement_timeout_ms = (config.statement_timeout.as_millis() as u64).max(1);
         let pool = PgPoolOptions::new()
             .max_connections(config.max_connections)
             .acquire_timeout(config.acquire_timeout)
@@ -182,9 +184,26 @@ pub mod test {
                 .await
                 .map_err(into_internal)?;
 
-            let db = Db::connect(&format!("{server}/{name}")).await?;
-            db.migrate(migrator).await?;
-            Ok(TestDb { admin, name, db })
+            // The database now exists; if connect/migrate fails, drop it so a failed
+            // setup leaves no orphaned database or open pool behind.
+            let setup = async {
+                let db = Db::connect(&format!("{server}/{name}")).await?;
+                db.migrate(migrator).await?;
+                Ok::<Db, Error>(db)
+            }
+            .await;
+
+            match setup {
+                Ok(db) => Ok(TestDb { admin, name, db }),
+                Err(error) => {
+                    let _ =
+                        sqlx::query(&format!("drop database if exists \"{name}\" with (force)"))
+                            .execute(&admin)
+                            .await;
+                    admin.close().await;
+                    Err(error)
+                }
+            }
         }
 
         pub fn db(&self) -> &Db {
@@ -213,11 +232,38 @@ pub mod test {
         let idx = without_query
             .rfind('/')
             .ok_or_else(|| Error::invalid("DATABASE_URL has no database path"))?;
-        Ok((
-            without_query[..idx].to_string(),
-            without_query[idx + 1..].to_string(),
-        ))
+        let server = &without_query[..idx];
+        let database = &without_query[idx + 1..];
+        // Guard the shapes `rfind` can't disambiguate: a missing `scheme://` authority
+        // or an empty database name (e.g. a trailing slash). TestDb targets standard
+        // `postgres://[user[:pass]@]host[:port]/db` URLs.
+        if !server.contains("://") || database.is_empty() {
+            return Err(Error::invalid(
+                "DATABASE_URL must look like postgres://host/dbname",
+            ));
+        }
+        Ok((server.to_string(), database.to_string()))
     }
+}
+
+/// Whether a SQLx error is a Postgres unique-constraint violation (SQLSTATE `23505`).
+///
+/// Repositories use this to map a lost insert race to `Error::conflict` (409) instead
+/// of a generic 500 — the `find`-then-`insert` pre-check is a fast path, not the
+/// correctness guarantee; the database constraint is:
+///
+/// ```ignore
+/// let user = sqlx::query_as!(User, "insert into users ...")
+///     .fetch_one(exec)
+///     .await
+///     .map_err(|e| if is_unique_violation(&e) {
+///         Error::conflict("email already registered")
+///     } else {
+///         e.into()
+///     })?;
+/// ```
+pub fn is_unique_violation(error: &sqlx::Error) -> bool {
+    matches!(error, sqlx::Error::Database(db) if db.code().as_deref() == Some("23505"))
 }
 
 /// Every SQLx error is an internal error. Not-found is expressed by the

@@ -9,7 +9,7 @@ const TTL_SECONDS: i64 = 3600;
 
 /// Sign a short-lived access token for an authenticated user.
 pub fn issue(secret: &[u8], id: Uuid, roles: Vec<String>) -> Result<String> {
-    let exp = (OffsetDateTime::now_utc().unix_timestamp() + TTL_SECONDS) as usize;
+    let exp = (OffsetDateTime::now_utc().unix_timestamp() + TTL_SECONDS) as u64;
     let claims = Claims {
         sub: id,
         roles,

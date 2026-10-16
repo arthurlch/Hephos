@@ -225,7 +225,14 @@ impl UserRepo {
             input.email
         )
         .fetch_one(exec)
-        .await?;
+        .await
+        .map_err(|e| {
+            if hephos::db::is_unique_violation(&e) {
+                Error::conflict("email already registered")
+            } else {
+                e.into()
+            }
+        })?;
         Ok(user)
     }
 }
@@ -234,6 +241,12 @@ impl UserRepo {
 Repo rules: one query per method; take an executor (`PgExecutor`) so pool and tx
 both work; return domain types; `fetch_optional` for "maybe", never let
 `RowNotFound` escape; no business logic.
+
+An insert guarded by a `UNIQUE` index **must** map the violation to
+`Error::conflict` (409) with `hephos::db::is_unique_violation` — the database
+constraint is the real guarantee; a prior `find`-then-`insert` check is only a fast
+path and loses to concurrency (two callers both pass the check, one insert then
+409s). Without this mapping the race surfaces as a `500`.
 
 ### 2.5 Domain type (`domain/user.rs`)
 

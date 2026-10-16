@@ -103,14 +103,34 @@ impl<M: Model> Agent<M> {
         self.tools.iter().map(|t| t.schema.clone()).collect()
     }
 
-    /// The shared turn loop: call the model, dispatch any tool calls, repeat
-    /// until the model returns a final answer or a limit is hit.
-    ///
-    /// BOUNDARY: the turn/tool-dispatch loop is the agent layer's core algorithm.
-    /// Its contract is fixed here (bounded by `Limits`, errors on overrun, feeds
-    /// `ToolResult`s back as messages). The provider-specific encoding of tool
-    /// calls is handled inside each [`Model`] implementation.
+    /// The shared turn loop, bounded by every `Limits` dimension: it enforces the
+    /// wall-clock `timeout` here and the turn count in the loop. A hung model or tool
+    /// call ends the run with an error rather than blocking forever.
     async fn drive(
+        &self,
+        input: &str,
+        response_schema: Option<serde_json::Value>,
+    ) -> Result<Message> {
+        match tokio::time::timeout(
+            self.limits.timeout,
+            self.drive_turns(input, response_schema),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => Err(Error::internal(format!(
+                "agent exceeded its time limit of {:?}",
+                self.limits.timeout
+            ))),
+        }
+    }
+
+    /// The turn/tool-dispatch loop. Call the model, dispatch any tool calls, repeat
+    /// until the model returns a final answer or `max_turns` is hit.
+    ///
+    /// BOUNDARY: the provider-specific encoding of tool calls is handled inside each
+    /// [`Model`] implementation; `parse_tool_calls` is the seam.
+    async fn drive_turns(
         &self,
         input: &str,
         response_schema: Option<serde_json::Value>,

@@ -29,6 +29,9 @@ pub enum Error {
     #[error("conflict: {0}")]
     Conflict(String),
 
+    #[error("payload too large")]
+    PayloadTooLarge,
+
     /// Anything unexpected. Logged in full, returned as an opaque 500.
     #[error(transparent)]
     Internal(#[from] anyhow::Error),
@@ -74,6 +77,7 @@ impl Error {
             Error::Unauthorized => StatusCode::UNAUTHORIZED,
             Error::Forbidden => StatusCode::FORBIDDEN,
             Error::Conflict(_) => StatusCode::CONFLICT,
+            Error::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
             Error::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -85,6 +89,7 @@ impl Error {
             Error::Unauthorized => "unauthorized",
             Error::Forbidden => "forbidden",
             Error::Conflict(_) => "conflict",
+            Error::PayloadTooLarge => "payload_too_large",
             Error::Internal(_) => "internal",
         }
     }
@@ -111,6 +116,7 @@ impl Error {
             Error::Unauthorized => "unauthorized".to_string(),
             Error::Forbidden => "forbidden".to_string(),
             Error::Conflict(msg) => msg.clone(),
+            Error::PayloadTooLarge => "request body too large".to_string(),
             Error::Internal(cause) => {
                 tracing::error!(error = ?cause, "internal error");
                 "internal error".to_string()

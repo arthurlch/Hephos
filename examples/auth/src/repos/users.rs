@@ -45,6 +45,7 @@ impl UserRepo {
         email: &str,
         password_hash: &str,
     ) -> Result<User> {
+        // Unique index on `email` maps a lost registration race to `409`, not `500`.
         let user = sqlx::query_as!(
             User,
             "insert into users (email, password_hash) values ($1, $2) \
@@ -53,7 +54,14 @@ impl UserRepo {
             password_hash
         )
         .fetch_one(exec)
-        .await?;
+        .await
+        .map_err(|e| {
+            if hephos::db::is_unique_violation(&e) {
+                Error::conflict("email already registered")
+            } else {
+                e.into()
+            }
+        })?;
         Ok(user)
     }
 }

@@ -118,7 +118,7 @@ where
                         .headers()
                         .get(AUTHORIZATION)
                         .and_then(|value| value.to_str().ok())
-                        .and_then(|value| value.strip_prefix("Bearer "));
+                        .and_then(bearer_token);
 
                     match token {
                         Some(token) => match verify(token) {
@@ -160,12 +160,38 @@ where
     }
 }
 
+/// Extract the credential from an `Authorization` header value, accepting the
+/// `Bearer` scheme case-insensitively (RFC 7235 schemes are case-insensitive).
+/// Returns `None` for a missing/empty credential or a different scheme.
+fn bearer_token(header: &str) -> Option<&str> {
+    let (scheme, credential) = header.split_once(' ')?;
+    if !scheme.eq_ignore_ascii_case("bearer") {
+        return None;
+    }
+    let token = credential.trim();
+    (!token.is_empty()).then_some(token)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     async fn ok() -> &'static str {
         "ok"
+    }
+
+    #[test]
+    fn parses_bearer_case_insensitively() {
+        assert_eq!(bearer_token("Bearer abc"), Some("abc"));
+        assert_eq!(bearer_token("bearer abc"), Some("abc"));
+        assert_eq!(bearer_token("BEARER   abc  "), Some("abc"));
+    }
+
+    #[test]
+    fn rejects_other_schemes_and_empty() {
+        assert_eq!(bearer_token("Basic abc"), None);
+        assert_eq!(bearer_token("Bearer "), None);
+        assert_eq!(bearer_token("abc"), None);
     }
 
     #[test]

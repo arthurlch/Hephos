@@ -112,16 +112,19 @@ where
             .await
             .map_err(|e| Error::internal(format!("serve: {e}")))?;
 
-        // Tasks were cancelled by the shutdown token; drain them with a deadline so a
-        // stuck task cannot wedge shutdown, and surface panics rather than swallowing.
+        // Tasks were cancelled by the shutdown token; drain them against a single
+        // shared deadline (so N stuck tasks cost one deadline, not N), and surface
+        // panics rather than swallowing them.
+        let deadline = tokio::time::Instant::now() + DRAIN_DEADLINE;
         for handle in handles {
-            match tokio::time::timeout(DRAIN_DEADLINE, handle).await {
+            match tokio::time::timeout_at(deadline, handle).await {
                 Ok(Ok(())) => {}
                 Ok(Err(join_error)) => {
                     tracing::error!(error = %join_error, "background task panicked");
                 }
                 Err(_) => {
-                    tracing::warn!("background task did not finish within the drain deadline");
+                    tracing::warn!("background tasks did not finish within the drain deadline");
+                    break;
                 }
             }
         }
