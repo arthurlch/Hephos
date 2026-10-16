@@ -1,11 +1,15 @@
+use argon2::password_hash::rand_core::{OsRng, RngCore};
 use hephos::prelude::*;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
+use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::domain::user::Claims;
 
-const TTL_SECONDS: i64 = 3600;
+// Access tokens are short-lived: the refresh token is how a session is kept alive, so
+// a leaked access token is only useful for a few minutes.
+const TTL_SECONDS: i64 = 900;
 
 /// Sign a short-lived access token for an authenticated user.
 pub fn issue(secret: &[u8], id: Uuid, roles: Vec<String>) -> Result<String> {
@@ -41,6 +45,32 @@ pub fn verify(keyring: &[Vec<u8>], token: &str) -> Result<Identity> {
     Err(Error::Unauthorized)
 }
 
+/// Mint a new opaque refresh token. Returns `(raw, hash)`: the raw token is returned
+/// to the client once; only the hash is persisted, so a database dump cannot be
+/// replayed as a session.
+pub fn new_refresh_token() -> (String, String) {
+    let mut bytes = [0u8; 32];
+    OsRng.fill_bytes(&mut bytes);
+    let raw = to_hex(&bytes);
+    let hash = hash_refresh_token(&raw);
+    (raw, hash)
+}
+
+/// Hash a presented refresh token for a constant-shape lookup against the stored hash.
+/// The token is high-entropy random, so a fast digest (not a password KDF) is correct.
+pub fn hash_refresh_token(raw: &str) -> String {
+    to_hex(&Sha256::digest(raw.as_bytes()))
+}
+
+fn to_hex(bytes: &[u8]) -> String {
+    use std::fmt::Write;
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        let _ = write!(s, "{b:02x}");
+    }
+    s
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -57,6 +87,23 @@ mod tests {
 
         assert!(verify(&keyring, &signed_with_previous).is_ok());
         assert!(verify(&keyring, &signed_with_current).is_ok());
+    }
+
+    #[test]
+    fn refresh_token_hash_is_stable_and_not_the_raw_token() {
+        let (raw, hash) = new_refresh_token();
+        assert_ne!(raw, hash);
+        assert_eq!(hash, hash_refresh_token(&raw));
+        // 32 random bytes and a SHA-256 digest both hex-encode to 64 chars.
+        assert_eq!(raw.len(), 64);
+        assert_eq!(hash.len(), 64);
+    }
+
+    #[test]
+    fn refresh_tokens_are_unique() {
+        let (a, _) = new_refresh_token();
+        let (b, _) = new_refresh_token();
+        assert_ne!(a, b);
     }
 
     #[test]
