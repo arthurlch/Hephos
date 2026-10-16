@@ -15,6 +15,15 @@ All notable changes to Hephos are recorded here. Format follows
 - **JWT signing-key rotation** (auth example): `token::verify` takes a keyring and
   accepts a token signed under any key. Set `JWT_SECRET_PREVIOUS` alongside
   `JWT_SECRET` during a rotation for zero-downtime key rollover.
+- **Token lifecycle: refresh + revocation** (auth example). Login now returns a
+  `{ access_token, refresh_token }` pair: a short-lived (15 min) access JWT and a
+  long-lived (30 day) opaque refresh token. New endpoints `POST /auth/refresh`
+  (rotates the refresh token and mints a new pair) and `POST /auth/logout` (revokes
+  it, `204`, existence-opaque). Refresh tokens are stored only as SHA-256 hashes in a
+  `refresh_tokens` table; presenting an already-rotated token triggers reuse/theft
+  detection and revokes the user's whole token family.
+- `StatusCode` is now in `hephos::prelude`, so the doctrine's `Result<StatusCode>`
+  `204` handler shape (CLAUDE.md §4) works without importing `axum`.
 
 ### Fixed (audit remediation)
 - **Unique-violation now maps to `409`, not `500`** — the DB-example repos catch a

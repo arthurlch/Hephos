@@ -31,6 +31,10 @@ pub use identity::{Identity, Principal};
 pub use router::Router;
 pub use task::Task;
 
+/// Re-export so handlers can return a bare status (the canonical `204` shape:
+/// `Result<StatusCode>`) without importing `axum` directly.
+pub use axum::http::StatusCode;
+
 /// Re-export the cancellation primitive so apps never pull it in directly.
 pub use tokio_util::sync::CancellationToken;
 

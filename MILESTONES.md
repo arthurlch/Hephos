@@ -191,16 +191,17 @@ the create→read and unique-violation→409 flow tests run against a live schem
 **Theme.** Security-grade identity, not a demo.
 
 **Ship.**
-- Token lifecycle decision and implementation: short-lived access tokens + a
-  documented refresh/revocation strategy (opinionated: stateless access + a
-  revocation list table for logout/compromise), with support for **signing-key
-  rotation** (multiple valid keys during a rotation window).
+- ✅ Token lifecycle decision and implementation: short-lived (15 min) access tokens +
+  rotating, revocable refresh tokens (opinionated: stateless access JWT + a hashed
+  `refresh_tokens` table for rotation, logout, and reuse/theft detection), with
+  support for **signing-key rotation** (multiple valid keys during a rotation window
+  via `JWT_SECRET_PREVIOUS`).
 - **Machine-to-machine auth:** Postgres-backed API keys (hashed, scoped, revocable)
   resolved to the same `Identity`, alongside user JWTs — service callers are a
   first-class production need, not an afterthought.
 - `argon2` parameters tuned and documented; password policy hooks.
 - Role/permission checks consolidated (`require_role`, resource-ownership pattern).
-- Security-headers middleware (HSTS, nosniff, frame-deny) and an opinionated,
+- ✅ Security-headers middleware (HSTS, nosniff, frame-deny) and an opinionated,
   minimal CORS story.
 - Canonical request-validation pattern (shape at the edge, rules in the service),
   decided once.

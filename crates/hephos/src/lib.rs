@@ -13,7 +13,7 @@
 
 pub use hephos_core::{
     App, CancellationToken, Config, Ctx, Error, Event, Events, Identity, Json, LogFormat, Path,
-    Principal, Query, Result, Router, Task, sse, test, ws,
+    Principal, Query, Result, Router, StatusCode, Task, sse, test, ws,
 };
 
 #[cfg(feature = "db")]
@@ -29,7 +29,7 @@ pub use hephos_mcp as mcp;
 pub mod prelude {
     pub use hephos_core::{
         App, Ctx, Error, Event, Events, Identity, Json, Path, Principal, Query, Result, Router,
-        Task,
+        StatusCode, Task,
     };
 
     #[cfg(feature = "db")]

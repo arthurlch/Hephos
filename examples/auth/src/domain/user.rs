@@ -18,9 +18,19 @@ pub struct Credentials {
     pub password: String,
 }
 
+/// What a successful login or refresh returns: a short-lived access token (a JWT)
+/// and a long-lived opaque refresh token. The refresh token is shown to the client
+/// exactly once — only its hash is stored.
 #[derive(Debug, Clone, Serialize)]
-pub struct TokenResponse {
-    pub token: String,
+pub struct TokenPair {
+    pub access_token: String,
+    pub refresh_token: String,
+}
+
+/// Body for `/auth/refresh` and `/auth/logout`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct RefreshRequest {
+    pub refresh_token: String,
 }
 
 /// JWT claims. `sub` is the user id; `roles` drives authorization; `exp` is the
