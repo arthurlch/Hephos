@@ -12,6 +12,9 @@ All notable changes to Hephos are recorded here. Format follows
 - **CORS** via `HEPHOS_CORS_ORIGINS` (comma-separated allow-list, or `*`). Off by
   default (same-origin); an opinionated minimal layer (standard methods +
   `content-type`/`authorization`, no credentials), preflight handled outermost.
+- **JWT signing-key rotation** (auth example): `token::verify` takes a keyring and
+  accepts a token signed under any key. Set `JWT_SECRET_PREVIOUS` alongside
+  `JWT_SECRET` during a rotation for zero-downtime key rollover.
 
 ### Fixed (audit remediation)
 - **Unique-violation now maps to `409`, not `500`** — the DB-example repos catch a
