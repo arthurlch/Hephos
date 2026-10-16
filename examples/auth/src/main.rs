@@ -14,5 +14,6 @@ use crate::state::AppState;
 #[tokio::main]
 async fn main() -> Result<()> {
     let state = AppState::init().await?;
-    App::new(state).routes(api::routes()).run().await
+    let auth = state.auth.clone();
+    App::new(state).routes(api::routes(auth)).run().await
 }

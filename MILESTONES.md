@@ -196,9 +196,11 @@ the create→read and unique-violation→409 flow tests run against a live schem
   `refresh_tokens` table for rotation, logout, and reuse/theft detection), with
   support for **signing-key rotation** (multiple valid keys during a rotation window
   via `JWT_SECRET_PREVIOUS`).
-- **Machine-to-machine auth:** Postgres-backed API keys (hashed, scoped, revocable)
+- ✅ **Machine-to-machine auth:** Postgres-backed API keys (hashed, scoped, revocable)
   resolved to the same `Identity`, alongside user JWTs — service callers are a
-  first-class production need, not an afterthought.
+  first-class production need, not an afterthought. (Required making the auth seam
+  async: `Router::authenticated` now takes `Fn(String) -> impl Future`, since key
+  resolution is I/O. Added `Db::connect_lazy` so the offline route canary still runs.)
 - `argon2` parameters tuned and documented; password policy hooks.
 - Role/permission checks consolidated (`require_role`, resource-ownership pattern).
 - ✅ Security-headers middleware (HSTS, nosniff, frame-deny) and an opinionated,
