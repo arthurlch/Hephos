@@ -147,10 +147,15 @@ make run-rest      # launch the REST example, then: curl localhost:8080/products
 cargo test         # drives the real router via hephos::test::TestClient
 ```
 
+New to Hephos? **[`GETTING_STARTED.md`](./GETTING_STARTED.md)** walks from a clean
+checkout to a running, tested backend — and shows the one canonical way to add an
+endpoint, a database-backed resource, and auth.
+
 ## Documentation
 
 | File | Purpose |
 | --- | --- |
+| [`GETTING_STARTED.md`](./GETTING_STARTED.md) | From clone to a running, tested backend — the hands-on starting point. |
 | [`CLAUDE.md`](./CLAUDE.md) | Operating manual for coding agents. Actionable, normative rules. |
 | [`ARCHITECTURE.md`](./ARCHITECTURE.md) | Why the system is shaped the way it is. |
 | [`CONVENTIONS.md`](./CONVENTIONS.md) | The single canonical way to write every kind of code. |
