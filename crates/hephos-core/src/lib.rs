@@ -49,3 +49,13 @@ pub mod ws {
 pub mod sse {
     pub use axum::response::sse::{Event, KeepAlive, Sse};
 }
+
+/// Lower-level HTTP primitives for the handler escape hatches (raw bodies, request
+/// headers, custom responses) — so an app reaches for these, not `axum` directly. See
+/// `CONVENTIONS.md §2.13`. The canonical `Json`/`Path`/`Query` surface stays in the
+/// prelude; these are the deliberate 20%.
+pub mod http {
+    pub use axum::body::Bytes;
+    pub use axum::http::{HeaderMap, HeaderName, HeaderValue};
+    pub use axum::response::{IntoResponse, Response};
+}

@@ -126,6 +126,13 @@ Rules:
 - Return is **always** `Result<Json<T>>` (or `Result<StatusCode>` for 204).
 - The body is: extract → call one service method → wrap → return. Nothing else.
 
+This shape fits ~80% of endpoints. For the other 20% — a custom status+body, response
+headers, a raw body or request header (webhooks), SSE/streaming, a WebSocket upgrade, a
+redirect or file — there is **one sanctioned shape each**, listed in `CONVENTIONS.md
+§2.13`. Use those; reach for `hephos::http`/`hephos::sse`/`hephos::ws`, never `axum`
+directly. The escape is only in the extractors and the return type — `ctx`-first, one
+service call, rules-in-the-service, `hephos::Error` still all hold.
+
 ---
 
 ## 5. State and ownership
