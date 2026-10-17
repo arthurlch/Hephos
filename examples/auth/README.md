@@ -13,6 +13,7 @@ src/
   repos/users.rs           credential + profile queries.
   repos/refresh_tokens.rs  refresh-token storage (hashed), rotation, revocation.
   repos/api_keys.rs        API-key storage (hashed), lookup, revocation.
+  repos/notes.rs           per-user notes (the ownership-demo resource).
   services/auth.rs         register, login, refresh, logout, authenticate (the seam
                            resolver: JWT or API key), mint/revoke API keys.
   services/users.rs        profile lookup.
@@ -21,6 +22,7 @@ src/
   api/auth.rs              public register/login/refresh/logout.
   api/users.rs             protected routes: GET /me, admin-only GET /users.
   api/keys.rs              admin-only POST /api-keys, DELETE /api-keys/{id}.
+  api/notes.rs             owner-only CRUD: POST/GET/PUT/DELETE /notes[/{id}].
 ```
 
 Flow:
@@ -37,6 +39,9 @@ Flow:
   token or a machine API key — in the `Authorization: Bearer` header.
 - `GET /me` works for any authenticated user; `GET /users` requires the `admin`
   role (`ctx.require_role("admin")`).
+- `/notes` is the **resource-ownership** demo: a note belongs to its creator, and each
+  handler loads the note then calls `ctx.require_owner(note.owner_id)`, so another user
+  gets `403` (and an anonymous caller `401`). This is the canonical IDOR guard.
 
 **Machine-to-machine API keys.** An admin mints a key with `POST /api-keys`
 (`{ "name": …, "roles": [...] }`); the raw `hephos_sk_…` value is returned once and

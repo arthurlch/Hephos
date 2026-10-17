@@ -275,3 +275,93 @@ async fn non_admin_cannot_mint_api_key() {
         403
     );
 }
+
+/// Register a user and return their access token.
+async fn register_and_login(client: &TestClient, email: &str) -> String {
+    let creds = json!({ "email": email, "password": "correct horse battery" });
+    assert_eq!(
+        client.post_json("/auth/register", &creds).await.status(),
+        200
+    );
+    tokens(
+        &client
+            .post_json("/auth/login", &creds)
+            .await
+            .json::<Value>(),
+    )
+    .0
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres, migrations, and JWT_SECRET"]
+async fn owner_can_crud_note_but_others_get_403() {
+    let client = client().await;
+    let owner = register_and_login(&client, "owner@example.com").await;
+    let intruder = register_and_login(&client, "intruder@example.com").await;
+
+    // Owner creates a note.
+    let created = client
+        .post_json_with_token("/notes", &owner, &json!({ "body": "my secret" }))
+        .await;
+    assert_eq!(created.status(), 200);
+    let note_id = created.json::<Value>()["id"].as_str().unwrap().to_string();
+
+    // Owner can read, update, and (later) delete it.
+    assert_eq!(
+        client
+            .get_with_token(&format!("/notes/{note_id}"), &owner)
+            .await
+            .status(),
+        200
+    );
+    assert_eq!(
+        client
+            .put_json_with_token(
+                &format!("/notes/{note_id}"),
+                &owner,
+                &json!({ "body": "edited" })
+            )
+            .await
+            .status(),
+        200
+    );
+
+    // A different authenticated user cannot touch it (require_owner → 403).
+    assert_eq!(
+        client
+            .get_with_token(&format!("/notes/{note_id}"), &intruder)
+            .await
+            .status(),
+        403
+    );
+    assert_eq!(
+        client
+            .put_json_with_token(
+                &format!("/notes/{note_id}"),
+                &intruder,
+                &json!({ "body": "hijack" })
+            )
+            .await
+            .status(),
+        403
+    );
+    assert_eq!(
+        client
+            .delete_with_token(&format!("/notes/{note_id}"), &intruder)
+            .await
+            .status(),
+        403
+    );
+
+    // An anonymous caller is 401, not 403.
+    assert_eq!(client.get(&format!("/notes/{note_id}")).await.status(), 401);
+
+    // The owner can delete it.
+    assert_eq!(
+        client
+            .delete_with_token(&format!("/notes/{note_id}"), &owner)
+            .await
+            .status(),
+        204
+    );
+}

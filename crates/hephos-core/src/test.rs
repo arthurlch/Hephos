@@ -136,9 +136,30 @@ impl TestClient {
         token: &str,
         body: &T,
     ) -> TestResponse {
+        self.json_request_with_token("POST", path, token, body)
+            .await
+    }
+
+    /// `PUT` a JSON body with an `Authorization: Bearer` header.
+    pub async fn put_json_with_token<T: Serialize>(
+        &self,
+        path: &str,
+        token: &str,
+        body: &T,
+    ) -> TestResponse {
+        self.json_request_with_token("PUT", path, token, body).await
+    }
+
+    async fn json_request_with_token<T: Serialize>(
+        &self,
+        method: &str,
+        path: &str,
+        token: &str,
+        body: &T,
+    ) -> TestResponse {
         let bytes = serde_json::to_vec(body).unwrap();
         let request = Request::builder()
-            .method("POST")
+            .method(method)
             .uri(path)
             .header("content-type", "application/json")
             .header("authorization", format!("Bearer {token}"))

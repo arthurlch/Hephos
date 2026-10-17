@@ -1,6 +1,7 @@
 use hephos::prelude::*;
 
 use crate::services::auth::AuthService;
+use crate::services::notes::NoteService;
 use crate::services::users::UserService;
 
 pub type Ctx = hephos::Ctx<AppState>;
@@ -11,6 +12,7 @@ pub type Ctx = hephos::Ctx<AppState>;
 pub struct AppState {
     pub auth: AuthService,
     pub users: UserService,
+    pub notes: NoteService,
 }
 
 impl AppState {
@@ -18,7 +20,8 @@ impl AppState {
         let db = Db::connect_from_env().await?;
         db.migrate(&sqlx::migrate!("./migrations")).await?;
         let auth = AuthService::from_env(db.clone())?;
-        let users = UserService::new(db);
-        Ok(AppState { auth, users })
+        let users = UserService::new(db.clone());
+        let notes = NoteService::new(db);
+        Ok(AppState { auth, users, notes })
     }
 }

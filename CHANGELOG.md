@@ -52,6 +52,10 @@ All notable changes to Hephos are recorded here. Format follows
 - **Canonical patterns documented once** in `CONVENTIONS.md`: the async auth seam and
   authorization guards (§2.6/§2.6a), and request validation — shape at the edge, rules
   in the service (§3.4).
+- **Owner-only `/notes` resource** (auth example): a per-user CRUD resource that
+  exercises `ctx.require_owner` end-to-end — the owner gets `200`, another user `403`,
+  anonymous `401` (migration `0004`). Makes the resource-ownership pattern runnable, not
+  just documented. Adds `TestClient::put_json_with_token`.
 
 ### Fixed (0.0.4 audit remediation)
 - **Refresh-token double-spend race closed** — `RefreshTokenRepo::revoke` now reports
