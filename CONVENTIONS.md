@@ -470,6 +470,72 @@ pub async fn serve(db: hephos::db::Db) -> Result<()> {
 }
 ```
 
+### 2.13 Escape hatches — when a handler isn't `Result<Json<T>>`
+
+The canonical handler is `async fn h(ctx: Ctx, Json(x): Json<In>) -> Result<Json<Out>>`.
+That covers ~80% of endpoints. For the rest, these are the **sanctioned** shapes — pick
+one, don't improvise. The escape is only in the *extractors* (input) and the *return
+type* (output); every other rule still holds: `ctx` is first, you call **one** service
+method, business rules and I/O stay in the service, and errors are `hephos::Error`.
+Reach for `hephos::http` / `hephos::sse` / `hephos::ws`, never `axum` directly.
+
+**No body (`204`), or a custom status:**
+```rust
+pub async fn delete(ctx: Ctx, Path(id): Path<Uuid>) -> Result<StatusCode> {
+    ctx.state().notes.delete(&ctx, id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+```
+
+**A status *and* a body:** return the tuple — `axum` renders it.
+```rust
+pub async fn create(ctx: Ctx, Json(input): Json<CreateUser>) -> Result<(StatusCode, Json<User>)> {
+    let user = ctx.state().users.create(&ctx, input).await?;
+    Ok((StatusCode::CREATED, Json(user)))
+}
+```
+
+**Response headers:** prepend a header list to the tuple.
+```rust
+use hephos::http::{HeaderName, HeaderValue};
+pub async fn get(ctx: Ctx, Path(id): Path<Uuid>)
+    -> Result<([(HeaderName, HeaderValue); 1], Json<Doc>)> {
+    let doc = ctx.state().docs.get(&ctx, id).await?;
+    let etag = HeaderValue::from_str(&doc.etag).map_err(|_| Error::internal("bad etag"))?;
+    Ok(([(HeaderName::from_static("etag"), etag)], Json(doc)))
+}
+```
+
+**Raw body + a request header (webhooks):** take `Bytes` for the unparsed body and
+`HeaderMap` for headers. The signature check is a business rule, so it lives in the
+service; the handler just forwards.
+```rust
+use hephos::http::{Bytes, HeaderMap};
+pub async fn stripe(ctx: Ctx, headers: HeaderMap, body: Bytes) -> Result<StatusCode> {
+    let sig = headers
+        .get("stripe-signature")
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| Error::invalid("missing signature"))?;
+    ctx.state().billing.handle_webhook(sig, &body).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+```
+
+**Path / query parameters:** `Path<T>` and `Query<T>` are extractors, used alongside
+`Json` (see §2.2) — a handler may take several: `h(ctx, Path(id), Query(q), Json(body))`.
+
+**Server-sent events / streaming:** return `Sse<impl Stream<...>>` from `hephos::sse`;
+select the stream against `ctx.cancel_token()` so it stops on shutdown. Full example in
+`examples/streaming`.
+
+**WebSocket upgrade:** take `WebSocketUpgrade` from `hephos::ws` and return its
+`on_upgrade(...)` response; the socket loop also selects against `ctx.cancel_token()`.
+Full example in `examples/websocket`.
+
+**Anything else (redirects, files, bytes):** return `hephos::http::Response` (or any
+`impl IntoResponse`). If you find yourself here often, the shape probably wants a name —
+raise it rather than scattering ad-hoc responses.
+
 ---
 
 ## 3. Errors

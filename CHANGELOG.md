@@ -6,6 +6,13 @@ All notable changes to Hephos are recorded here. Format follows
 ## [Unreleased]
 
 ### Added (0.2.0 — observability & operability, in progress)
+- **Canonical handler escape hatches** (`CONVENTIONS.md §2.13`, CLAUDE.md §4): one
+  sanctioned shape each for the ~20% of endpoints that aren't `Result<Json<T>>` — custom
+  status/body, response headers, raw body + request headers (webhooks), SSE/streaming,
+  WebSocket upgrade, redirects/files. New `hephos::http` module re-exports the needed
+  primitives (`Bytes`, `HeaderMap`, `HeaderName`, `HeaderValue`, `Response`,
+  `IntoResponse`) so apps never reach into `axum` directly (addresses external review:
+  "define canonical patterns for the 20%, don't let an agent guess how to break the rule").
 - **Architecture-boundary lint** (`scripts/arch-lint.sh`, `make arch-lint`, CI): the
   load-bearing CLAUDE.md §2 layering rules are now machine-enforced on application code —
   the build fails if a handler runs SQL or imports a repo, if a service names an
