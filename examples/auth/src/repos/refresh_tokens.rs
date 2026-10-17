@@ -47,14 +47,18 @@ impl RefreshTokenRepo {
         Ok(row)
     }
 
-    pub async fn revoke<'e, E: PgExecutor<'e>>(exec: E, id: Uuid) -> Result<()> {
-        sqlx::query!(
+    /// Revoke a specific token. Returns whether a *live* row was revoked: the
+    /// `revoked_at is null` guard makes this an atomic test-and-set, so under two
+    /// concurrent rotations of the same token exactly one `revoke` returns `true` and
+    /// the loser gets `false` — which `refresh` uses to detect the race.
+    pub async fn revoke<'e, E: PgExecutor<'e>>(exec: E, id: Uuid) -> Result<bool> {
+        let result = sqlx::query!(
             "update refresh_tokens set revoked_at = now() where id = $1 and revoked_at is null",
             id
         )
         .execute(exec)
         .await?;
-        Ok(())
+        Ok(result.rows_affected() > 0)
     }
 
     /// Idempotent: revoking an unknown or already-revoked token is a no-op, so logout
