@@ -6,6 +6,11 @@ All notable changes to Hephos are recorded here. Format follows
 ## [Unreleased]
 
 ### Added (0.1.0 — in progress)
+- **End-to-end test for §24 simulation 1** (`examples/database`): asserts a successful
+  `create` emits `AppEvent::UserCreated` to a subscriber *after* commit — closing the
+  one untested link in the authenticated-write + DB + event chain. `ARCHITECTURE.md §24`
+  now states the realization status honestly (simulation 2's full agent→tool dispatch is
+  the agent layer, deferred to `0.5.0`).
 - **`GETTING_STARTED.md`**: a hands-on guide from a clean checkout to a running, tested
   backend — which example to copy for what, the app anatomy and layering rule, and the
   canonical way to add an endpoint, a database-backed resource, and auth. Linked from the
