@@ -81,6 +81,12 @@ api  →  services  →  repos  →  database
 A handler that calls a repo directly is a bug. A service that returns a
 `StatusCode` is a bug. A repo with business logic is a bug.
 
+These boundaries are not just doctrine — they are **enforced in CI** by
+`scripts/arch-lint.sh` (`make arch-lint`), which fails the build if a handler runs SQL
+or imports a repo, if a service names an `axum`/HTTP type, or if a repo calls up into a
+service. If the lint rejects your change, you have skipped a layer; move the code, don't
+work around the lint.
+
 ---
 
 ## 3. Errors: one type, always

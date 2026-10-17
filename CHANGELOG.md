@@ -6,6 +6,11 @@ All notable changes to Hephos are recorded here. Format follows
 ## [Unreleased]
 
 ### Added (0.2.0 — observability & operability, in progress)
+- **Architecture-boundary lint** (`scripts/arch-lint.sh`, `make arch-lint`, CI): the
+  load-bearing CLAUDE.md §2 layering rules are now machine-enforced on application code —
+  the build fails if a handler runs SQL or imports a repo, if a service names an
+  `axum`/HTTP type, or if a repo calls up into a service. Doctrine that the compiler
+  rejects, not just documents (addresses external review feedback).
 - **Panic isolation**: the standard stack now catches a handler panic (innermost, via
   `tower-http`'s `CatchPanicLayer`) and turns it into the standard opaque `500` instead
   of letting the worker task unwind — the server stays up. The panic payload is logged
