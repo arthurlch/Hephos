@@ -186,7 +186,7 @@ the create→read and unique-violation→409 flow tests run against a live schem
 
 ---
 
-## `0.0.4` — Authentication & authorization, hardened
+## `0.0.4` — Authentication & authorization, hardened ✅ (shipped)
 
 **Theme.** Security-grade identity, not a demo.
 
@@ -205,11 +205,13 @@ the create→read and unique-violation→409 flow tests run against a live schem
   parameters live in the PHC hash so they can be raised without breaking old hashes);
   password policy centralized in `validate_password` (NIST 800-63B length bounds, with
   a max to cap hashing work).
-- Role/permission checks consolidated (`require_role`, resource-ownership pattern).
+- ✅ Role/permission checks consolidated: `ctx.require_user` / `require_role` /
+  `require_owner` (the IDOR guard), with the canonical authorization pattern documented
+  in `CONVENTIONS.md §2.6a`.
 - ✅ Security-headers middleware (HSTS, nosniff, frame-deny) and an opinionated,
   minimal CORS story.
-- Canonical request-validation pattern (shape at the edge, rules in the service),
-  decided once.
+- ✅ Canonical request-validation pattern (shape at the edge via `serde`, business
+  rules in the service via `Error::invalid`), decided once in `CONVENTIONS.md §3.4`.
 
 **Explicitly not yet.** OAuth/OIDC providers, multi-tenant RBAC, policy engines.
 

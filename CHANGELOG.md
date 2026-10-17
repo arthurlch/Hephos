@@ -5,7 +5,7 @@ All notable changes to Hephos are recorded here. Format follows
 
 ## [Unreleased]
 
-### Added (0.0.4 — Auth & authz hardening, in progress)
+### Added (0.0.4 — Auth & authz hardening)
 - **Baseline security headers** on every response, set by the standard stack:
   `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy:
   no-referrer`. `Strict-Transport-Security` is opt-in via `HEPHOS_HSTS` (TLS only).
@@ -46,6 +46,12 @@ All notable changes to Hephos are recorded here. Format follows
 - **Canonical password policy** (auth example): a single `validate_password` in the
   service (NIST 800-63B — length over composition) with a `MAX_PASSWORD_LEN` bound so
   a huge input can't turn hashing into a DoS. Unit-tested.
+- **`Ctx::require_owner(owner)`**: the canonical resource-ownership (IDOR) guard —
+  `401` anonymous, `403` when the resource belongs to someone else. Rounds out the
+  authorization trio with `require_user` / `require_role`.
+- **Canonical patterns documented once** in `CONVENTIONS.md`: the async auth seam and
+  authorization guards (§2.6/§2.6a), and request validation — shape at the edge, rules
+  in the service (§3.4).
 
 ### Fixed (audit remediation)
 - **Unique-violation now maps to `409`, not `500`** — the DB-example repos catch a

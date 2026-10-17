@@ -271,18 +271,45 @@ pub struct CreateUser {
 Domain types: `Serialize` for outputs, `Deserialize` for inputs, `Debug + Clone`
 always. No methods with logic; no I/O; no dependency on other app modules.
 
-### 2.6 Authentication middleware (`api/auth.rs`) — shape
+### 2.6 Authentication (the `Router::authenticated` seam)
+
+One seam guards a route group. `verify` is **async** — it captures its dependencies
+(a signing keyring, a credential store) and returns the resolved identity. The
+framework extracts the bearer token, calls `verify`, inserts the `Identity`, and maps
+a missing/rejected token to `401` before any handler runs. A single resolver handles
+every credential kind, so there is never a second auth seam.
 
 ```rust
-// Validates a bearer token and replaces the request Identity. Applied to a route
-// group via the framework's layer seam (see examples/auth for the full wiring).
-async fn authenticate(/* headers, next */) {
-    // 1. read `Authorization: Bearer <token>`; missing → leave Identity::Anonymous
-    // 2. verify with jsonwebtoken against the secret from env
-    // 3. on success, insert Identity::User(Principal { id, roles }) into extensions
-    // 4. on invalid token, respond 401 (Error::Unauthorized)
+// api::routes takes the service so the resolver can reach it (see examples/auth).
+let protected = users::routes().authenticated(move |token| {
+    let auth = auth.clone();
+    async move { auth.authenticate(&token).await } // JWT, or an API-key DB lookup
+});
+```
+
+`verify` returns `Error::Unauthorized` for a bad credential (→ `401`); an
+`Error::Internal` (e.g. the credential store is down) surfaces as `500`, never a
+misleading `401`.
+
+### 2.6a Authorization (role & ownership guards)
+
+Authorize inside the handler, from `ctx`, with the narrowest guard. These return the
+narrowest-correct error automatically (`401` anonymous, `403` authenticated-but-denied).
+
+```rust
+pub async fn update(ctx: Ctx, Path(id): Path<Uuid>, Json(input): Json<Edit>) -> Result<Json<Post>> {
+    let post = ctx.state().posts.get(&ctx, id).await?; // load first
+    ctx.require_owner(post.author_id)?;                // IDOR guard: caller owns it
+    let post = ctx.state().posts.update(&ctx, id, input).await?;
+    Ok(Json(post))
 }
 ```
+
+- `ctx.require_user()` — any authenticated caller.
+- `ctx.require_role("admin")` — a coarse capability.
+- `ctx.require_owner(owner_id)` — this caller owns this specific resource. Load the
+  row first; never trust an id from the request as proof of ownership. For an admin
+  override: `if ctx.require_role("admin").is_err() { ctx.require_owner(owner_id)?; }`.
 
 ### 2.7 Background task (`tasks/outbox.rs`)
 
@@ -476,6 +503,31 @@ Response body is always `{ "error": { "kind": "...", "message": "..." } }`.
 - `services/`: the business errors — `Invalid`, `NotFound`, `Conflict`,
   `Forbidden`.
 - `repos/`: only `Internal` (via `?`); never business errors.
+
+### 3.4 Request validation (shape at the edge, rules in the service)
+
+Two layers, decided once — do not blur them:
+
+- **Shape** is validated at the edge by `serde` when `Json<T>` deserializes. A missing
+  or mistyped field is a `400` before any handler code runs. Model required fields as
+  non-`Option` and lean on the type system; don't re-check "is this field present".
+- **Business rules** are validated in the **service**, returning `Error::invalid`
+  (→ `400`). This is the one place a rule lives, so it holds no matter which
+  handler, task, or tool calls the service. Put the rule in a named helper when it is
+  more than a line (e.g. `validate_password` in `examples/auth`), and unit-test it.
+
+```rust
+// service — the canonical place for a rule
+pub async fn create(&self, _ctx: &Ctx, input: CreateUser) -> Result<User> {
+    if !input.email.contains('@') {
+        return Err(Error::invalid("email is not valid"));
+    }
+    // ... persist ...
+}
+```
+
+Never validate business rules in a handler, and never trust the edge to enforce more
+than shape.
 
 ---
 

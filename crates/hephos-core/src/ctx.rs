@@ -63,6 +63,21 @@ impl<S: Clone + Send + Sync + 'static> Ctx<S> {
         }
     }
 
+    /// Return the authenticated principal if it *owns* the resource — i.e. its id is
+    /// `owner`. This is the canonical guard against acting on another user's resource
+    /// (IDOR): load the row, then `ctx.require_owner(row.owner_id)?`. Strict by design
+    /// (no implicit admin bypass); for an admin override, try `require_role("admin")`
+    /// first and fall back to this. Same error discipline as [`Ctx::require_role`]:
+    /// `Unauthorized` when anonymous, `Forbidden` when it is someone else's.
+    pub fn require_owner(&self, owner: Uuid) -> Result<&Principal> {
+        let principal = self.require_user()?;
+        if principal.id == owner {
+            Ok(principal)
+        } else {
+            Err(Error::Forbidden)
+        }
+    }
+
     /// Correlation id for this request. Already attached to the tracing span.
     pub fn request_id(&self) -> Uuid {
         self.request_id
@@ -174,6 +189,26 @@ mod tests {
         assert!(ctx.require_user().is_ok());
         assert!(matches!(ctx.require_role("admin"), Err(Error::Forbidden)));
         assert!(ctx.require_role("user").is_ok());
+    }
+
+    #[test]
+    fn require_owner_allows_the_owner_and_forbids_others() {
+        let me = Uuid::from_u128(1);
+        let someone_else = Uuid::from_u128(2);
+        let ctx = Ctx::detached(()).with_identity(Identity::User(Principal {
+            id: me,
+            roles: vec![],
+        }));
+        assert!(ctx.require_owner(me).is_ok());
+        assert!(matches!(
+            ctx.require_owner(someone_else),
+            Err(Error::Forbidden)
+        ));
+        // Anonymous is 401, not 403 — same discipline as the other guards.
+        assert!(matches!(
+            Ctx::detached(()).require_owner(me),
+            Err(Error::Unauthorized)
+        ));
     }
 
     #[test]
