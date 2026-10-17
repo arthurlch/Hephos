@@ -223,7 +223,7 @@ headers asserted.
 
 ---
 
-## `0.1.0` — First coherent backend release
+## `0.1.0` — First coherent backend release ✅ (shipped)
 
 **Theme.** "You can build a real REST + DB + auth backend with Hephos."
 
