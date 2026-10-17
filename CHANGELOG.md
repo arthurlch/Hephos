@@ -5,8 +5,14 @@ All notable changes to Hephos are recorded here. Format follows
 
 ## [Unreleased]
 
+### Changed
+- **Renamed `CLAUDE.md` → `AGENTS.md`** as the canonical, agent-agnostic operating
+  manual (any coding agent — Claude, Gemini, Cursor, or a human — reads the same rules).
+  `CLAUDE.md` is now a symlink to `AGENTS.md`, so tools that auto-load either name get the
+  doctrine with no duplicated source of truth. All references updated across the repo.
+
 ### Added (0.2.0 — observability & operability, in progress)
-- **Canonical handler escape hatches** (`CONVENTIONS.md §2.13`, CLAUDE.md §4): one
+- **Canonical handler escape hatches** (`CONVENTIONS.md §2.13`, AGENTS.md §4): one
   sanctioned shape each for the ~20% of endpoints that aren't `Result<Json<T>>` — custom
   status/body, response headers, raw body + request headers (webhooks), SSE/streaming,
   WebSocket upgrade, redirects/files. New `hephos::http` module re-exports the needed
@@ -14,7 +20,7 @@ All notable changes to Hephos are recorded here. Format follows
   `IntoResponse`) so apps never reach into `axum` directly (addresses external review:
   "define canonical patterns for the 20%, don't let an agent guess how to break the rule").
 - **Architecture-boundary lint** (`scripts/arch-lint.sh`, `make arch-lint`, CI): the
-  load-bearing CLAUDE.md §2 layering rules are now machine-enforced on application code —
+  load-bearing AGENTS.md §2 layering rules are now machine-enforced on application code —
   the build fails if a handler runs SQL or imports a repo, if a service names an
   `axum`/HTTP type, or if a repo calls up into a service. Doctrine that the compiler
   rejects, not just documents (addresses external review feedback).
@@ -74,7 +80,7 @@ are pre-1.0/unstable and not covered by the stability promise.
   `refresh_tokens` table; presenting an already-rotated token triggers reuse/theft
   detection and revokes the user's whole token family.
 - `StatusCode` is now in `hephos::prelude`, so the doctrine's `Result<StatusCode>`
-  `204` handler shape (CLAUDE.md §4) works without importing `axum`.
+  `204` handler shape (AGENTS.md §4) works without importing `axum`.
 - **Auth-seam token-length cap** (`MAX_TOKEN_LEN`, 4 KiB): the bearer extractor
   rejects oversized credentials before `verify` runs, so a caller cannot force
   signature checks or credential-store lookups on pathologically large input.
@@ -160,7 +166,7 @@ are pre-1.0/unstable and not covered by the stability promise.
 ### Added (DX)
 - `.cargo/config.toml` with `cargo ck`/`cargo lint` aliases and opt-in faster-linker
   guidance; `[profile.dev] debug = "line-tables-only"` for faster edit→check links.
-- CLAUDE.md §11 "Compiler feedback" protocol (check-before-test, scope commands) —
+- AGENTS.md §11 "Compiler feedback" protocol (check-before-test, scope commands) —
   agent iteration speed is `cargo check` speed.
 - MILESTONES: the agent-turns-to-green-build benchmark as the headline adoption proof.
 
@@ -207,7 +213,7 @@ are pre-1.0/unstable and not covered by the stability promise.
 ## [0.0.1] — Scaffold
 
 ### Status
-Pre-alpha scaffold. The doctrine (`CLAUDE.md`, `ARCHITECTURE.md`, `CONVENTIONS.md`),
+Pre-alpha scaffold. The doctrine (`AGENTS.md`, `ARCHITECTURE.md`, `CONVENTIONS.md`),
 the public API contract (`crates/`), and the reference examples are in place.
 
 ### Added

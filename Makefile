@@ -17,7 +17,7 @@ fmt-check:
 lint:
 	cargo clippy --locked --all-targets --all-features $(OFFLINE) -- -D warnings
 
-## arch-lint: enforce the CLAUDE.md §2 layering boundaries on app code
+## arch-lint: enforce the AGENTS.md §2 layering boundaries on app code
 arch-lint:
 	./scripts/arch-lint.sh
 

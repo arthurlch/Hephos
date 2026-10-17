@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# Architecture-boundary lint — enforce the layering rules from CLAUDE.md §2 in CI, so a
-# violation fails the build instead of relying on the doctrine being read. A `CLAUDE.md`
+# Architecture-boundary lint — enforce the layering rules from AGENTS.md §2 in CI, so a
+# violation fails the build instead of relying on the doctrine being read. An `AGENTS.md`
 # is a suggestion; this is a gate.
 #
 # Scope: application code only (`examples/*/src`, the reference apps and the shape every
@@ -38,7 +38,7 @@ check() {
     fi
 }
 
-echo "== Architecture-boundary lint (CLAUDE.md §2 — application code) =="
+echo "== Architecture-boundary lint (AGENTS.md §2 — application code) =="
 echo
 
 check "handler runs SQL or touches the pool/tx (api/ must call a service)" \

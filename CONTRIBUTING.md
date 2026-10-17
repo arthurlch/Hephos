@@ -6,7 +6,7 @@ and verify by running — not just compiling.
 
 ## Read these first
 
-- [`CLAUDE.md`](./CLAUDE.md) — the operating manual. Actionable rules, the forbidden
+- [`AGENTS.md`](./AGENTS.md) — the operating manual. Actionable rules, the forbidden
   / preferred lists, and the validation commands. This is normative.
 - [`CONVENTIONS.md`](./CONVENTIONS.md) — the canonical shape of every artifact.
 - [`ARCHITECTURE.md`](./ARCHITECTURE.md) — why the system is shaped the way it is.
@@ -20,7 +20,7 @@ documented change to `CONVENTIONS.md` in the same PR — never a silent second s
 
 ## Before you open a PR
 
-Run the validation (CLAUDE.md §11), or `make ci` for the offline subset:
+Run the validation (AGENTS.md §11), or `make ci` for the offline subset:
 
 ```sh
 cargo fmt --all --check

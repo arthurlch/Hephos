@@ -156,7 +156,7 @@ endpoint, a database-backed resource, and auth.
 | File | Purpose |
 | --- | --- |
 | [`GETTING_STARTED.md`](./GETTING_STARTED.md) | From clone to a running, tested backend — the hands-on starting point. |
-| [`CLAUDE.md`](./CLAUDE.md) | Operating manual for coding agents. Actionable, normative rules. |
+| [`AGENTS.md`](./AGENTS.md) | Operating manual for coding agents. Actionable, normative rules. |
 | [`ARCHITECTURE.md`](./ARCHITECTURE.md) | Why the system is shaped the way it is. |
 | [`CONVENTIONS.md`](./CONVENTIONS.md) | The single canonical way to write every kind of code. |
 | [`MILESTONES.md`](./MILESTONES.md) | The versioned roadmap from `0.0.1` to a production `1.0`. |
