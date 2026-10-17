@@ -236,7 +236,9 @@ First public API review pass. Complete getting-started docs and a project templa
   `#[non_exhaustive]`; `agent`/`mcp` features documented as pre-1.0/unstable (not frozen
   at 0.1.0); `Db::connect_lazy_with` added for constructor symmetry; doc-comment gaps on
   load-bearing public items filled.
-- ⬜ Getting-started guide + project template.
+- ✅ Getting-started guide (`GETTING_STARTED.md`): clone → run → add an endpoint →
+  add a DB resource → add auth, all matching the real example code. The examples serve
+  as the project templates (copy → rename → strip), per the acceptance criterion.
 - ⬜ Acceptance: a new app built only by copying examples passes `make ci`, serves, and
   handles the two `ARCHITECTURE.md §24` simulations end-to-end.
 

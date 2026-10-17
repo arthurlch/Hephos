@@ -5,6 +5,12 @@ All notable changes to Hephos are recorded here. Format follows
 
 ## [Unreleased]
 
+### Added (0.1.0 — in progress)
+- **`GETTING_STARTED.md`**: a hands-on guide from a clean checkout to a running, tested
+  backend — which example to copy for what, the app anatomy and layering rule, and the
+  canonical way to add an endpoint, a database-backed resource, and auth. Linked from the
+  README. The examples are the project templates (copy → rename → strip).
+
 ### Changed (0.1.0 — API stabilization, in progress)
 - **First public API review pass.** Froze the stable surface ahead of `0.1.0`:
   - `Error`, `Config`, and `PoolConfig` are now `#[non_exhaustive]`, so adding a
