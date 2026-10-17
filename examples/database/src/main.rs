@@ -15,8 +15,13 @@ use crate::tasks::audit::AuditLog;
 #[tokio::main]
 async fn main() -> Result<()> {
     let state = AppState::init().await?;
+    let db = state.db.clone();
     App::new(state)
         .routes(api::routes())
+        .readiness(move || {
+            let db = db.clone();
+            async move { db.ping().await }
+        })
         .task(AuditLog)
         .run()
         .await

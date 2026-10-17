@@ -140,6 +140,29 @@ impl Db {
             .await
             .map_err(into_internal_migrate)
     }
+
+    /// Ping the database by executing `SELECT 1`.
+    ///
+    /// Returns `Ok(())` if the database is reachable and accepting queries,
+    /// or an error (such as [`Error::Internal`]) if connection acquisition or execution fails.
+    /// Wire into [`hephos_core::App::readiness`] to gate `/ready` on database connectivity:
+    ///
+    /// ```ignore
+    /// let db = state.db.clone();
+    /// App::new(state)
+    ///     .routes(api::routes())
+    ///     .readiness(move || {
+    ///         let db = db.clone();
+    ///         async move { db.ping().await }
+    ///     })
+    /// ```
+    pub async fn ping(&self) -> Result<()> {
+        sqlx::query("SELECT 1")
+            .execute(&self.pool)
+            .await
+            .map_err(into_internal)?;
+        Ok(())
+    }
 }
 
 /// An open transaction. Drop without commit rolls back.

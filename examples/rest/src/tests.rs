@@ -54,3 +54,15 @@ async fn search_filters_results() {
     assert_eq!(res.status(), 200);
     assert_eq!(res.json::<Value>().as_array().unwrap().len(), 1);
 }
+
+#[tokio::test]
+async fn health_and_ready_probes_return_200() {
+    let client = client().await;
+    let health = client.get("/health").await;
+    assert_eq!(health.status(), 200);
+    assert_eq!(health.json::<Value>()["status"], "ok");
+
+    let ready = client.get("/ready").await;
+    assert_eq!(ready.status(), 200);
+    assert_eq!(ready.json::<Value>()["status"], "ready");
+}

@@ -21,6 +21,11 @@ pub struct Router<S> {
     inner: axum::Router<S>,
 }
 
+/// Probe paths reserved by the framework. Applications cannot define custom routes
+/// at these paths; `/health` is auto-mounted by [`crate::App`], and `/ready` is
+/// configured via [`crate::App::readiness`].
+pub const RESERVED_PROBE_PATHS: &[&str] = &["/health", "/ready"];
+
 impl<S> Router<S>
 where
     S: Clone + Send + Sync + 'static,
@@ -154,6 +159,11 @@ where
     }
 
     fn method(mut self, path: &str, method: routing::MethodRouter<S>) -> Self {
+        assert!(
+            !RESERVED_PROBE_PATHS.contains(&path),
+            "route \"{path}\" is reserved by Hephos for framework probes. \
+             Liveness (/health) is auto-mounted; configure readiness via App::readiness.",
+        );
         self.inner = self.inner.route(path, method);
         self
     }
@@ -233,5 +243,17 @@ mod tests {
     #[should_panic(expected = "merge")]
     fn nesting_at_root_panics_with_guidance() {
         let _ = Router::<()>::new().nest("/", Router::<()>::new());
+    }
+
+    #[test]
+    #[should_panic(expected = "reserved by Hephos")]
+    fn reserving_health_panics_with_guidance() {
+        let _ = Router::<()>::new().get("/health", ok);
+    }
+
+    #[test]
+    #[should_panic(expected = "reserved by Hephos")]
+    fn reserving_ready_panics_with_guidance() {
+        let _ = Router::<()>::new().get("/ready", ok);
     }
 }

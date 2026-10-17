@@ -268,7 +268,7 @@ and handles the two canonical simulations from `ARCHITECTURE.md §24` end-to-end
 - RED metrics (request rate, errors, duration), labeled by **route template**
   (`/users/{id}`), never raw path — unbounded label cardinality would take down the
   metrics backend, so this is a correctness requirement, not a nicety.
-- `/health` (liveness) and `/ready` (readiness incl. DB check) endpoints, canonical.
+- ✅ `/health` (liveness) and `/ready` (readiness incl. DB check) endpoints, canonical.
 - ✅ Panic isolation: a handler panic becomes a logged `500`, never a crash
   (`CatchPanicLayer`, innermost in the standard stack).
 - Rate limiting via `tower-governor` (GCRA), one canonical configuration surface.

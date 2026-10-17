@@ -26,3 +26,14 @@ async fn connect_begin_query_commit_roundtrip() {
     assert_eq!(count, 2);
     tx.commit().await.unwrap();
 }
+
+#[tokio::test]
+#[ignore = "requires Postgres (DATABASE_URL)"]
+async fn ping_succeeds_against_live_database() {
+    let db = hephos_db::Db::connect_from_env()
+        .await
+        .expect("DATABASE_URL must point at a reachable Postgres");
+    db.ping()
+        .await
+        .expect("ping must succeed against live database");
+}

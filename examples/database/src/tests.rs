@@ -2,6 +2,7 @@
 //! a live Postgres, so they are `#[ignore]` offline — run them with
 //! `DATABASE_URL=… cargo test -p example-database -- --include-ignored`.
 
+use hephos::App;
 use hephos::db::test::TestDb;
 use hephos::test::TestClient;
 use serde_json::{Value, json};
@@ -91,4 +92,24 @@ async fn create_empty_email_is_400() {
         .await;
     assert_eq!(res.status(), 400);
     assert_eq!(res.json::<Value>()["error"]["kind"], "invalid");
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres and wired migrations"]
+async fn health_and_ready_probes_succeed() {
+    let state = AppState::init().await.unwrap();
+    let db = state.db.clone();
+    let app = App::new(state).routes(api::routes()).readiness(move || {
+        let db = db.clone();
+        async move { db.ping().await }
+    });
+    let client = TestClient::from_app(app);
+
+    let health = client.get("/health").await;
+    assert_eq!(health.status(), 200);
+    assert_eq!(health.json::<Value>()["status"], "ok");
+
+    let ready = client.get("/ready").await;
+    assert_eq!(ready.status(), 200);
+    assert_eq!(ready.json::<Value>()["status"], "ready");
 }

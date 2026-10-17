@@ -12,6 +12,13 @@ All notable changes to Hephos are recorded here. Format follows
   doctrine with no duplicated source of truth. All references updated across the repo.
 
 ### Added (0.2.0 — observability & operability, in progress)
+- **Canonical `/health` and `/ready` probes** (`0.2.0`): `/health` (liveness) is
+  auto-mounted by `App` and returns `200` (`{"status":"ok"}`); `/ready` (readiness)
+  defaults to `200` (`{"status":"ready"}`) and supports custom async checks via
+  `App::readiness(check)` (e.g. `move || { let db = db.clone(); async move { db.ping().await } }`),
+  flipping to `503 Service Unavailable` with opaque error reporting when a dependency fails.
+  Adds `Db::ping()` (`SELECT 1`), path reservation in `Router` to protect probe paths,
+  and `TestClient::from_app` for end-to-end probe testing.
 - **Build/test-speed accelerators** (opt-in, zero-install default preserved): `make
   nextest` (faster test runner) alongside the existing opt-in faster-linker/`sccache`
   guidance in `.cargo/config.toml`; AGENTS.md §11 lists them as the tighter agent loop.
