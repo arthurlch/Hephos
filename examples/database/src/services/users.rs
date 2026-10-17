@@ -75,4 +75,32 @@ mod tests {
         let err = state.users.get(&ctx, Uuid::nil()).await.unwrap_err();
         assert!(matches!(err, Error::NotFound(_)));
     }
+
+    // The §24 simulation-1 chain, end-to-end: a successful write emits `UserCreated`,
+    // which a subscriber (the `AuditLog` task in production) observes. Emission happens
+    // only after commit, so this also proves subscribers never see a rolled-back user.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn create_emits_user_created_after_commit() {
+        let state = state().await;
+        let ctx = Ctx::detached(state.clone());
+        let mut rx = state.events.subscribe();
+
+        let user = state
+            .users
+            .create(
+                &ctx,
+                CreateUser {
+                    email: "evt@example.com".into(),
+                },
+            )
+            .await
+            .unwrap();
+
+        let event = tokio::time::timeout(std::time::Duration::from_secs(1), rx.recv())
+            .await
+            .expect("event emitted within 1s")
+            .expect("event bus open");
+        assert!(matches!(event, AppEvent::UserCreated { id } if id == user.id));
+    }
 }

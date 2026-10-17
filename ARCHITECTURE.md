@@ -636,3 +636,11 @@ in `examples/tools` + `examples/agent`.
 
 Both simulations resolve to a single obvious implementation. Where they did not,
 the convention was tightened until they did.
+
+**Realization status.** Simulation 1 is fully realized and tested at `0.1.0`: the
+write + event chain in `examples/database` (with an end-to-end test that a successful
+`create` emits `UserCreated` to a subscriber) and the authenticated write seam in
+`examples/auth`. Simulation 2's *pieces* exist and are unit-tested (`examples/tools`'
+typed `Tool`, `examples/agent`'s structured `run_typed`), but the full agent-drives-tool
+dispatch depends on the agent layer, which `0.1.0` explicitly defers — it lands with the
+tool-call loop at `0.5.0`/`0.6.0` (the `agent`/`mcp` crates are pre-1.0/unstable).
