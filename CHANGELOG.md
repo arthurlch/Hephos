@@ -5,7 +5,14 @@ All notable changes to Hephos are recorded here. Format follows
 
 ## [Unreleased]
 
-### Added (0.1.0 — in progress)
+## [0.1.0] - 2026-10-18
+
+First coherent backend release: REST + database + authentication/authorization, with
+in-process tasks and events — all real and tested. Consolidates `0.0.2`–`0.0.4`, with a
+first public API review pass that freezes the stable surface. The `agent`/`mcp` features
+are pre-1.0/unstable and not covered by the stability promise.
+
+### Added (0.1.0)
 - **End-to-end test for §24 simulation 1** (`examples/database`): asserts a successful
   `create` emits `AppEvent::UserCreated` to a subscriber *after* commit — closing the
   one untested link in the authenticated-write + DB + event chain. `ARCHITECTURE.md §24`
@@ -16,7 +23,7 @@ All notable changes to Hephos are recorded here. Format follows
   canonical way to add an endpoint, a database-backed resource, and auth. Linked from the
   README. The examples are the project templates (copy → rename → strip).
 
-### Changed (0.1.0 — API stabilization, in progress)
+### Changed (0.1.0 — API stabilization)
 - **First public API review pass.** Froze the stable surface ahead of `0.1.0`:
   - `Error`, `Config`, and `PoolConfig` are now `#[non_exhaustive]`, so adding a
     variant/field later is not a breaking change. App code is unaffected (errors are
