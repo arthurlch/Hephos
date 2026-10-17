@@ -276,8 +276,10 @@ path, then run the full gate once before claiming done.
 - **Scope it.** Prefer `cargo check -p <crate>` and `cargo test -p <crate> <testname>`
   over `--workspace` while iterating.
 - **Don't trigger needless rebuilds.** Avoid flipping `--all-features` /
-  `--no-default-features` back and forth (each flip recompiles the graph). A faster
-  linker is available opt-in in `.cargo/config.toml`.
+  `--no-default-features` back and forth (each flip recompiles the graph).
+- **Opt-in accelerators** (all in `.cargo/config.toml`, none required for a clean
+  checkout): a faster linker (`lld`/`mold`), `sccache`, and `make nextest` (a faster
+  test runner). Install them once for a tighter loop.
 
 **Before you claim done (the gate — all must pass):**
 
