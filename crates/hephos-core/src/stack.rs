@@ -4,16 +4,18 @@
 //! limits, a default identity, and a shutdown-linked cancellation token.
 //!
 //! Order (outermost → innermost): observe → timeout → body-limit → cancel →
-//! (per-route auth, if any) → handler. The order is fixed on purpose; middleware
-//! ordering is a classic bug source, so it is decided once, here, and nowhere else.
+//! catch-panic → (per-route auth, if any) → handler. The order is fixed on purpose;
+//! middleware ordering is a classic bug source, so it is decided once, here, and
+//! nowhere else.
 
 use std::time::Duration;
 
 use axum::extract::Request;
 use axum::http::{HeaderValue, Method, StatusCode, header};
 use axum::middleware::{self, Next};
-use axum::response::Response;
+use axum::response::{IntoResponse, Response};
 use tokio_util::sync::CancellationToken;
+use tower_http::catch_panic::CatchPanicLayer;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::timeout::TimeoutLayer;
@@ -21,6 +23,7 @@ use tracing::Instrument;
 use uuid::Uuid;
 
 use crate::ctx::RequestId;
+use crate::error::Error;
 use crate::identity::Identity;
 
 /// Knobs for the stack. Derived from [`crate::Config`] in production; defaulted in
@@ -58,6 +61,10 @@ where
     // `.layer()` applies outermost-last, so the call order below is innermost-first.
     // CORS is outermost so preflight (`OPTIONS`) is answered before auth/timeout.
     let mut router = router
+        // Innermost: a handler panic is caught here and turned into a `500`, so the
+        // worker task never unwinds and the server stays up. Placed inside `observe`,
+        // so the 500 still gets the request id, security headers, and span log.
+        .layer(CatchPanicLayer::custom(on_panic))
         .layer(middleware::from_fn(move |req, next| {
             cancel(req, next, shutdown.clone())
         }))
@@ -140,6 +147,25 @@ async fn cancel(mut req: Request, next: Next, shutdown: CancellationToken) -> Re
     next.run(req).await
 }
 
+/// Turn a caught handler panic into the standard opaque `500`. The panic payload is
+/// captured in the log (via `Error::Internal`, which logs its full cause) and never
+/// leaks to the client. Reusing `Error` keeps the error-body shape identical to every
+/// other `500`.
+fn on_panic(payload: Box<dyn std::any::Any + Send + 'static>) -> Response {
+    let detail = panic_message(&payload);
+    Error::internal(format!("handler panicked: {detail}")).into_response()
+}
+
+fn panic_message(payload: &(dyn std::any::Any + Send)) -> &str {
+    if let Some(s) = payload.downcast_ref::<&'static str>() {
+        s
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s
+    } else {
+        "unknown panic"
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -147,13 +173,37 @@ mod tests {
     use axum::http::Request as HttpRequest;
     use tower::ServiceExt;
 
+    async fn boom() -> &'static str {
+        panic!("boom")
+    }
+
     fn app(cors_origins: Option<Vec<String>>) -> axum::Router {
-        let router = axum::Router::new().route("/x", axum::routing::get(|| async { "ok" }));
+        let router = axum::Router::new()
+            .route("/x", axum::routing::get(|| async { "ok" }))
+            .route("/panic", axum::routing::get(boom));
         let config = StackConfig {
             cors_origins,
             ..StackConfig::default()
         };
         apply(router, config, CancellationToken::new()).with_state(())
+    }
+
+    #[tokio::test]
+    async fn handler_panic_becomes_500_and_is_decorated() {
+        let request = HttpRequest::builder()
+            .uri("/panic")
+            .body(Body::empty())
+            .unwrap();
+        let response = app(None).oneshot(request).await.unwrap();
+        // Caught, not crashed: a `500` came back instead of the task unwinding.
+        assert_eq!(response.status(), 500);
+        // It flowed back out through `observe`, so it still carries the request id and
+        // the baseline security headers — a panic response is a normal response.
+        assert!(response.headers().get("x-request-id").is_some());
+        assert_eq!(
+            response.headers().get("x-content-type-options").unwrap(),
+            "nosniff"
+        );
     }
 
     #[tokio::test]

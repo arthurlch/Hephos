@@ -5,6 +5,13 @@ All notable changes to Hephos are recorded here. Format follows
 
 ## [Unreleased]
 
+### Added (0.2.0 — observability & operability, in progress)
+- **Panic isolation**: the standard stack now catches a handler panic (innermost, via
+  `tower-http`'s `CatchPanicLayer`) and turns it into the standard opaque `500` instead
+  of letting the worker task unwind — the server stays up. The panic payload is logged
+  in full (as an `Error::Internal` cause) and never leaks to the client; the response
+  still flows out through `observe`, so it carries the request id and security headers.
+
 ## [0.1.0] - 2026-10-18
 
 First coherent backend release: REST + database + authentication/authorization, with
