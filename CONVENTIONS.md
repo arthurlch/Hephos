@@ -1,6 +1,6 @@
 # CONVENTIONS.md
 
-The definitive, mechanical convention guide. Where `CLAUDE.md` gives rules and
+The definitive, mechanical convention guide. Where `AGENTS.md` gives rules and
 `ARCHITECTURE.md` gives reasons, this gives the exact shape of every artifact. When
 you write code, find the relevant section here and copy the shape.
 

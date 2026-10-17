@@ -6,7 +6,7 @@ one-off architecture review — the forward-looking parts of that review (the
 invariants, the testing lesson, what-to-build-first) live here now, as the spine of
 the roadmap.
 
-Read this with the doctrine: `CLAUDE.md` (rules), `ARCHITECTURE.md` (why),
+Read this with the doctrine: `AGENTS.md` (rules), `ARCHITECTURE.md` (why),
 `CONVENTIONS.md` (shapes). Nothing here overrides those; it schedules them.
 
 ---
@@ -98,7 +98,7 @@ public surface under SemVer.
 
 **Theme.** Doctrine, API contract, reference examples, project tooling.
 
-- Doctrine: `CLAUDE.md`, `ARCHITECTURE.md`, `CONVENTIONS.md`.
+- Doctrine: `AGENTS.md`, `ARCHITECTURE.md`, `CONVENTIONS.md`.
 - API contract crates: `hephos-core`, `hephos-db`, `hephos-agent`, `hephos-mcp`, `hephos`.
 - Nine reference examples; the REST path runs and is tested over HTTP.
 - `hephos::test::TestClient`; the `routes_build` canary.
@@ -781,7 +781,7 @@ revisited, rather than discovered in production.
   disambiguation" reproducible, not a slogan (`1.0`).
 - **Fast feedback loop.** Agent iteration speed is `cargo check` speed. Keep
   `hephos-core` lean, favor derives over heavy proc-macros, ship the opt-in faster
-  linker config, and keep the "check before test" protocol (CLAUDE.md §11) — compile
+  linker config, and keep the "check before test" protocol (AGENTS.md §11) — compile
   latency is a first-class adoption metric, tracked each release.
 
 ## Explicitly out of scope until after 1.0

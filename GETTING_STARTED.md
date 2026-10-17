@@ -3,7 +3,7 @@
 This guide takes you from a clean checkout to a running, tested backend, and shows the
 one canonical way to add each kind of code. Hephos is **aggressively opinionated** so
 that a coding agent (or you) never has to guess where something goes — every decision
-below is determined by the doctrine in [`CLAUDE.md`](./CLAUDE.md) and
+below is determined by the doctrine in [`AGENTS.md`](./AGENTS.md) and
 [`CONVENTIONS.md`](./CONVENTIONS.md).
 
 There is no project generator and no boilerplate to scaffold. **You start a new app by
@@ -285,6 +285,6 @@ launching it and hitting it) proves wiring. If you changed a `sqlx` query, run
 
 - [`CONVENTIONS.md`](./CONVENTIONS.md) — the canonical code structure for every layer,
   with full examples.
-- [`CLAUDE.md`](./CLAUDE.md) — the normative operating manual (what an agent must follow).
+- [`AGENTS.md`](./AGENTS.md) — the normative operating manual (what an agent must follow).
 - [`ARCHITECTURE.md`](./ARCHITECTURE.md) — why the system is shaped this way.
 - [`MILESTONES.md`](./MILESTONES.md) — the roadmap toward a production `1.0`.

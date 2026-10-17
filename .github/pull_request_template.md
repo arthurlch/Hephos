@@ -9,13 +9,13 @@ or agent — is verified the same way. Tick each box or say why it does not appl
 
 ## Checklist
 
-Validation (CLAUDE.md §11 — all must pass locally):
+Validation (AGENTS.md §11 — all must pass locally):
 - [ ] `cargo fmt --all --check`
 - [ ] `cargo clippy --all-targets --all-features -- -D warnings`
 - [ ] `cargo test` (offline suite green)
 - [ ] For DB/ignored/new-transport work: I **ran the app and observed it**, not just compiled it.
 
-Doctrine (see CLAUDE.md / CONVENTIONS.md):
+Doctrine (see AGENTS.md / CONVENTIONS.md):
 - [ ] New code is in the right directory and follows the nearest example.
 - [ ] One error type (`hephos::Error`); no new error enums in app code.
 - [ ] Every new/changed endpoint has a `TestClient` success **and** failure test.

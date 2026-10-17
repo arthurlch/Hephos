@@ -1,7 +1,7 @@
 # ARCHITECTURE.md
 
 This document explains **what** Hephos is and **why** it is shaped the way it is.
-`CLAUDE.md` tells you how to write code; this tells you why those rules exist.
+`AGENTS.md` tells you how to write code; this tells you why those rules exist.
 `CONVENTIONS.md` is the mechanical reference. When any two disagree, the
 contradiction is a defect to be fixed, not a choice to be made.
 
@@ -595,7 +595,7 @@ the tests themselves regular: the same success/failure pair fits every endpoint.
 
 Extension is **writing ordinary code in the canonical shape**, not configuring a
 plugin system. To add a capability, an agent adds a file in the right directory
-(§1 of `CLAUDE.md`) and follows the nearest example. New transports or subsystems
+(§1 of `AGENTS.md`) and follows the nearest example. New transports or subsystems
 are added to the framework as new crates behind feature flags, never as runtime
 plugins. This keeps the system statically analyzable — an agent can always see the
 whole program — and avoids the indirection a plugin registry would impose.
