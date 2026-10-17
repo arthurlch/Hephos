@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod keys;
+pub mod notes;
 pub mod users;
 
 use hephos::prelude::*;
@@ -14,6 +15,7 @@ use crate::state::AppState;
 pub fn routes(auth: AuthService) -> Router<AppState> {
     let protected = users::routes()
         .merge(keys::routes())
+        .merge(notes::routes())
         .authenticated(move |token| {
             let auth = auth.clone();
             async move { auth.authenticate(&token).await }
