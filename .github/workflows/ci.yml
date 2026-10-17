@@ -28,6 +28,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all --check
       - run: cargo clippy --locked --all-targets --all-features $OFFLINE -- -D warnings
+      - name: Architecture-boundary lint (CLAUDE.md §2)
+        run: ./scripts/arch-lint.sh
 
   test:
     name: test (offline)

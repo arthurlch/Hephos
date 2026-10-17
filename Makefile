@@ -3,10 +3,10 @@
 
 OFFLINE := --workspace --exclude example-database --exclude example-auth
 
-.PHONY: ci fmt fmt-check lint test build run-rest run-streaming run-websocket clean
+.PHONY: ci fmt fmt-check lint arch-lint test build run-rest run-streaming run-websocket clean
 
 ## ci: what GitHub Actions runs for the offline baseline
-ci: fmt-check lint test
+ci: fmt-check lint arch-lint test
 
 fmt:
 	cargo fmt --all
@@ -16,6 +16,10 @@ fmt-check:
 
 lint:
 	cargo clippy --locked --all-targets --all-features $(OFFLINE) -- -D warnings
+
+## arch-lint: enforce the CLAUDE.md §2 layering boundaries on app code
+arch-lint:
+	./scripts/arch-lint.sh
 
 test:
 	cargo test --locked --all-features $(OFFLINE)
