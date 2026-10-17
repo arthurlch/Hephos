@@ -25,3 +25,8 @@ lint = "clippy --all-targets --all-features -- -D warnings"
 # Optional compile cache across checkouts (install: `cargo install sccache`):
 # [build]
 # rustc-wrapper = "sccache"
+#
+# --- Opt-in faster test runner -------------------------------------------------
+# `cargo install cargo-nextest`, then `make nextest` — a faster runner with clearer
+# output. `cargo test` stays the zero-install default (CI and `make test`) so a clean
+# checkout always works without extra tools.

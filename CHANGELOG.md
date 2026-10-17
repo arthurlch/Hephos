@@ -12,6 +12,12 @@ All notable changes to Hephos are recorded here. Format follows
   doctrine with no duplicated source of truth. All references updated across the repo.
 
 ### Added (0.2.0 — observability & operability, in progress)
+- **Build/test-speed accelerators** (opt-in, zero-install default preserved): `make
+  nextest` (faster test runner) alongside the existing opt-in faster-linker/`sccache`
+  guidance in `.cargo/config.toml`; AGENTS.md §11 lists them as the tighter agent loop.
+  `cargo test` stays the CI/`make test` default so a clean checkout always works
+  (addresses external review on compile-time/DX; forcing a linker or runner would break
+  checkouts that lack the tool, so these stay opt-in by design).
 - **Canonical handler escape hatches** (`CONVENTIONS.md §2.13`, AGENTS.md §4): one
   sanctioned shape each for the ~20% of endpoints that aren't `Result<Json<T>>` — custom
   status/body, response headers, raw body + request headers (webhooks), SSE/streaming,

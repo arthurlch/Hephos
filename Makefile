@@ -3,7 +3,7 @@
 
 OFFLINE := --workspace --exclude example-database --exclude example-auth
 
-.PHONY: ci fmt fmt-check lint arch-lint test build run-rest run-streaming run-websocket clean
+.PHONY: ci fmt fmt-check lint arch-lint test nextest build run-rest run-streaming run-websocket clean
 
 ## ci: what GitHub Actions runs for the offline baseline
 ci: fmt-check lint arch-lint test
@@ -23,6 +23,11 @@ arch-lint:
 
 test:
 	cargo test --locked --all-features $(OFFLINE)
+
+## nextest: faster offline test run (opt-in; `cargo install cargo-nextest`). Same scope
+## as `test`; `cargo test` stays the zero-install default so a clean checkout always works.
+nextest:
+	cargo nextest run --locked --all-features $(OFFLINE)
 
 build:
 	cargo build --locked $(OFFLINE)
