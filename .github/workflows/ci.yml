@@ -83,7 +83,8 @@ jobs:
       PGHOST: localhost
       PGUSER: postgres
       PGPASSWORD: postgres
-      JWT_SECRET: ci-only-secret-ci-only-secret
+      # ≥ 32 bytes: AuthService::from_env rejects shorter signing secrets.
+      JWT_SECRET: ci-only-secret-ci-only-secret-0123456789
     steps:
       - uses: actions/checkout@v4
       - run: rustup show

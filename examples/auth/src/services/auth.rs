@@ -35,15 +35,17 @@ pub struct AuthService {
 
 impl AuthService {
     pub fn from_env(db: Db) -> Result<Self> {
-        let current = std::env::var("JWT_SECRET")
-            .map_err(|_| Error::invalid("JWT_SECRET is not set"))?
-            .into_bytes();
-        let mut keyring = vec![current];
+        let current =
+            std::env::var("JWT_SECRET").map_err(|_| Error::invalid("JWT_SECRET is not set"))?;
+        // Reject an empty/short secret: HMAC accepts a zero-length key, so an unset-but-
+        // exported `JWT_SECRET=""` would otherwise become a predictable signing key that
+        // lets anyone forge an admin token. Require real entropy (≥ 32 bytes).
+        let mut keyring = vec![require_secret("JWT_SECRET", current)?];
         // A previous key, set only during a signing-key rotation, keeps tokens signed
         // with the old key verifying until it is retired.
         if let Ok(previous) = std::env::var("JWT_SECRET_PREVIOUS") {
             if !previous.is_empty() {
-                keyring.push(previous.into_bytes());
+                keyring.push(require_secret("JWT_SECRET_PREVIOUS", previous)?);
             }
         }
         Ok(AuthService {
@@ -77,6 +79,9 @@ impl AuthService {
     }
 
     async fn authenticate_api_key(&self, token: &str) -> Result<Identity> {
+        // No decoy/constant-time dance like `login`: the key is high-entropy random and
+        // the lookup is a single indexed equality on its hash, so a missing key leaks no
+        // useful timing signal (nothing an attacker can steer toward a valid key).
         let hash = token::hash_opaque_token(token);
         let key = ApiKeyRepo::find_active_by_hash(self.db.pool(), &hash)
             .await?
@@ -129,6 +134,13 @@ impl AuthService {
     }
 
     pub async fn login(&self, _ctx: &Ctx, input: Credentials) -> Result<TokenPair> {
+        // Reject over-length input before hashing: no registered password can exceed
+        // the policy bound, so this is never a valid login, and it stops an attacker
+        // forcing argon2 work on a multi-megabyte body. `Unauthorized` (not `invalid`)
+        // keeps login's existence-opacity — the same answer a wrong password gets.
+        if input.password.len() > MAX_PASSWORD_LEN {
+            return Err(Error::Unauthorized);
+        }
         let row = UserRepo::find_auth_by_email(self.db.pool(), &input.email).await?;
 
         // Verify even when the user is missing, against a known-valid decoy hash,
@@ -169,7 +181,14 @@ impl AuthService {
             .await?
             .ok_or(Error::Unauthorized)?;
 
-        RefreshTokenRepo::revoke(tx.exec(), stored.id).await?;
+        // Atomic single-use check: `revoke`'s `where revoked_at is null` means only one
+        // of two concurrent rotations of this token wins. If we lost the race the token
+        // was already rotated away — treat that like reuse and revoke the whole family.
+        if !RefreshTokenRepo::revoke(tx.exec(), stored.id).await? {
+            RefreshTokenRepo::revoke_all_for_user(tx.exec(), stored.user_id).await?;
+            tx.commit().await?;
+            return Err(Error::Unauthorized);
+        }
         let pair = self.mint_pair(tx.exec(), user.id, user.roles).await?;
         tx.commit().await?;
         Ok(pair)
@@ -199,6 +218,19 @@ impl AuthService {
             refresh_token: raw,
         })
     }
+}
+
+// Minimum signing-secret length. A JWT HMAC key shorter than its 256-bit output adds
+// no security; below this is almost always a misconfiguration (empty/placeholder).
+const MIN_SECRET_LEN: usize = 32;
+
+fn require_secret(name: &str, value: String) -> Result<Vec<u8>> {
+    if value.len() < MIN_SECRET_LEN {
+        return Err(Error::invalid(format!(
+            "{name} must be at least {MIN_SECRET_LEN} bytes"
+        )));
+    }
+    Ok(value.into_bytes())
 }
 
 /// The canonical place for password rules. Checked in the service (business rule),
@@ -280,5 +312,12 @@ mod tests {
     #[test]
     fn verify_rejects_a_malformed_hash() {
         assert!(!verify_password("whatever", "not-a-phc-hash"));
+    }
+
+    #[test]
+    fn require_secret_rejects_short_and_empty_keys() {
+        assert!(require_secret("JWT_SECRET", String::new()).is_err());
+        assert!(require_secret("JWT_SECRET", "a".repeat(MIN_SECRET_LEN - 1)).is_err());
+        assert!(require_secret("JWT_SECRET", "a".repeat(MIN_SECRET_LEN)).is_ok());
     }
 }

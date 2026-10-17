@@ -80,20 +80,7 @@ impl Db {
     /// Connect with explicit pool config. Installs the server-side statement timeout
     /// on every connection, so one pathological query cannot pin a connection.
     pub async fn connect_with(url: &str, config: PoolConfig) -> Result<Self> {
-        // Clamp to ≥1ms: Postgres treats `statement_timeout = 0` as *disabled*, the
-        // opposite of the intent, which a sub-millisecond `Duration` would trigger.
-        let statement_timeout_ms = (config.statement_timeout.as_millis() as u64).max(1);
-        let pool = PgPoolOptions::new()
-            .max_connections(config.max_connections)
-            .acquire_timeout(config.acquire_timeout)
-            .after_connect(move |conn, _meta| {
-                Box::pin(async move {
-                    sqlx::query(&format!("SET statement_timeout = {statement_timeout_ms}"))
-                        .execute(conn)
-                        .await?;
-                    Ok(())
-                })
-            })
+        let pool = pool_options(&config)
             .connect(url)
             .await
             .map_err(into_internal)?;
@@ -103,23 +90,12 @@ impl Db {
     /// Build a pool **without** opening a connection — SQLx connects lazily on first
     /// use. Startup never blocks on the database, and offline tests (e.g. the
     /// `routes_build` canary) can construct application state without a live server.
-    /// The server-side statement timeout is still installed on each connection when it
-    /// is actually opened. Only the URL is parsed here, so this fails only on a
-    /// malformed `url`.
+    /// Shares `connect_with`'s options (including the server-side statement timeout,
+    /// installed on each connection when it is actually opened) with the default
+    /// [`PoolConfig`] — env-based tuning is only applied by `connect_from_env`. No
+    /// connection is attempted here, so this fails only on a URL SQLx cannot parse.
     pub fn connect_lazy(url: &str) -> Result<Self> {
-        let config = PoolConfig::default();
-        let statement_timeout_ms = (config.statement_timeout.as_millis() as u64).max(1);
-        let pool = PgPoolOptions::new()
-            .max_connections(config.max_connections)
-            .acquire_timeout(config.acquire_timeout)
-            .after_connect(move |conn, _meta| {
-                Box::pin(async move {
-                    sqlx::query(&format!("SET statement_timeout = {statement_timeout_ms}"))
-                        .execute(conn)
-                        .await?;
-                    Ok(())
-                })
-            })
+        let pool = pool_options(&PoolConfig::default())
             .connect_lazy(url)
             .map_err(into_internal)?;
         Ok(Db { pool })
@@ -294,6 +270,25 @@ pub fn is_unique_violation(error: &sqlx::Error) -> bool {
 /// Every SQLx error is an internal error. Not-found is expressed by the
 /// repository (via `fetch_optional` returning `None`), never by leaking
 /// `RowNotFound` — so "missing row" and "database is down" stay distinct.
+// The one place pool options are built, shared by `connect_with` and `connect_lazy`
+// so the security-relevant statement-timeout install never diverges between them.
+fn pool_options(config: &PoolConfig) -> PgPoolOptions {
+    // Clamp to ≥1ms: Postgres treats `statement_timeout = 0` as *disabled*, the
+    // opposite of the intent, which a sub-millisecond `Duration` would trigger.
+    let statement_timeout_ms = (config.statement_timeout.as_millis() as u64).max(1);
+    PgPoolOptions::new()
+        .max_connections(config.max_connections)
+        .acquire_timeout(config.acquire_timeout)
+        .after_connect(move |conn, _meta| {
+            Box::pin(async move {
+                sqlx::query(&format!("SET statement_timeout = {statement_timeout_ms}"))
+                    .execute(conn)
+                    .await?;
+                Ok(())
+            })
+        })
+}
+
 fn into_internal(error: sqlx::Error) -> Error {
     Error::Internal(anyhow::Error::new(error))
 }

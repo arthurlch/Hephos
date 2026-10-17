@@ -34,6 +34,7 @@ async fn admin(ctx: Ctx<S>) -> Result<Json<&'static str>> {
 
 // The seam is async; this resolver returns a ready result, standing in for a real
 // JWT/API-key verifier (which would await a signature check or credential lookup).
+// "boom" simulates an I/O failure in the resolver (e.g. the credential store is down).
 async fn verify(token: String) -> Result<Identity> {
     match token.as_str() {
         "admin" => Ok(Identity::User(Principal {
@@ -44,6 +45,7 @@ async fn verify(token: String) -> Result<Identity> {
             id: Uuid::nil(),
             roles: vec![],
         })),
+        "boom" => Err(Error::internal("credential store unavailable")),
         _ => Err(Error::Unauthorized),
     }
 }
@@ -108,4 +110,13 @@ async fn protected_route_forbids_without_role() {
 async fn protected_route_allows_admin() {
     let res = app().get_with_token("/admin", "admin").await;
     assert_eq!(res.status(), 200);
+}
+
+#[tokio::test]
+async fn verify_internal_error_is_500_not_401() {
+    // An I/O failure in the resolver must surface as 500 — not be masked as a 401 that
+    // falsely tells the caller their credential is bad.
+    let res = app().get_with_token("/admin", "boom").await;
+    assert_eq!(res.status(), 500);
+    assert_eq!(res.json::<Value>()["error"]["kind"], "internal");
 }

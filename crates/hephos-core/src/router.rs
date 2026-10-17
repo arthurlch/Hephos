@@ -131,6 +131,10 @@ where
                     match token {
                         Some(token) => match verify(token).await {
                             Ok(identity) => {
+                                // Overwrites the `Identity::Anonymous` the standard stack
+                                // seeds. Correct because this `route_layer` runs *inside*
+                                // the stack (which is applied outermost by `App`), so our
+                                // resolved identity is the last writer `Ctx` reads.
                                 request.extensions_mut().insert(identity);
                                 next.run(request).await
                             }

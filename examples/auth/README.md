@@ -49,6 +49,10 @@ lookup is a database query.
 Only SHA-256 hashes of refresh tokens and API keys are stored, so a database dump
 cannot be replayed as a session or a key.
 
+**Known gap (ops):** rotation/revocation mark rows dead but never delete them, so
+`refresh_tokens` grows over time. A periodic reaper (`DELETE … WHERE expires_at <
+now() - <grace>`) belongs in `tasks/`; it is tracked for `0.2.0` (operability).
+
 Requires Postgres and `JWT_SECRET`. Run:
 `DATABASE_URL=… JWT_SECRET=… cargo run -p example-auth`
 

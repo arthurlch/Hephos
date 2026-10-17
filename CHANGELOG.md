@@ -53,6 +53,23 @@ All notable changes to Hephos are recorded here. Format follows
   authorization guards (§2.6/§2.6a), and request validation — shape at the edge, rules
   in the service (§3.4).
 
+### Fixed (0.0.4 audit remediation)
+- **Refresh-token double-spend race closed** — `RefreshTokenRepo::revoke` now reports
+  whether it revoked a *live* row (atomic `where revoked_at is null` test-and-set); two
+  concurrent rotations of the same token can no longer both succeed. The loser is
+  treated as reuse and the token family is revoked, restoring single-use + theft
+  detection under concurrency.
+- **Empty/short `JWT_SECRET` rejected at startup** — HMAC accepts a zero-length key, so
+  an exported-but-empty secret would have become a predictable, forgeable signing key.
+  `JWT_SECRET`/`JWT_SECRET_PREVIOUS` must now be ≥ 32 bytes.
+- **`login` bounds password length before hashing** — the `MAX_PASSWORD_LEN` policy is
+  now enforced on login too (as `401`), so an unauthenticated caller can't force argon2
+  work on a multi-megabyte body.
+- **Auth-seam `Internal`→`500` now covered by an offline test** — the standard-stack
+  HTTP suite asserts a resolver I/O failure surfaces as `500`, not a masked `401`.
+- **`Db::connect_lazy`/`connect_with` share one pool-options builder** — the
+  security-relevant statement-timeout install can no longer diverge between them.
+
 ### Fixed (audit remediation)
 - **Unique-violation now maps to `409`, not `500`** — the DB-example repos catch a
   Postgres `23505` via the new `hephos::db::is_unique_violation` and return
