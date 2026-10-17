@@ -15,6 +15,7 @@ impl Event for AppEvent {}
 // `Db` handle, so AppState does not separately store one (an unread field).
 #[derive(Clone)]
 pub struct AppState {
+    pub db: Db,
     pub events: Events<AppEvent>,
     pub users: UserService,
 }
@@ -24,7 +25,7 @@ impl AppState {
         let db = Db::connect_from_env().await?;
         db.migrate(&sqlx::migrate!("./migrations")).await?;
         let events = Events::new(1024);
-        let users = UserService::new(db, events.clone());
-        Ok(AppState { events, users })
+        let users = UserService::new(db.clone(), events.clone());
+        Ok(AppState { db, events, users })
     }
 }

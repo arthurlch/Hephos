@@ -21,7 +21,7 @@ mod stack;
 mod task;
 pub mod test;
 
-pub use app::App;
+pub use app::{App, ProbeResponse};
 pub use config::{Config, LogFormat};
 pub use ctx::Ctx;
 pub use error::{Error, Result};

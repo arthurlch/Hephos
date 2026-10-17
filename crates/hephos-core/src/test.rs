@@ -32,6 +32,7 @@ use serde::de::DeserializeOwned;
 use tokio_util::sync::CancellationToken;
 use tower::ServiceExt;
 
+use crate::app::App;
 use crate::router::Router;
 use crate::stack::{self, StackConfig};
 
@@ -44,11 +45,21 @@ pub struct TestClient {
 
 impl TestClient {
     /// Build a client from the app's router and state, with production-default limits.
+    /// Automatically mounts the framework probes (`/health`, `/ready`).
     pub fn new<S>(router: Router<S>, state: S) -> Self
     where
         S: Clone + Send + Sync + 'static,
     {
-        Self::build(router, state, StackConfig::default())
+        Self::from_app(App::new(state).routes(router))
+    }
+
+    /// Build a client from an [`App`] instance, preserving registered readiness checks
+    /// and auto-mounted probes.
+    pub fn from_app<S>(app: App<S>) -> Self
+    where
+        S: Clone + Send + Sync + 'static,
+    {
+        Self::build_from_app(app, StackConfig::default())
     }
 
     /// Build a client with explicit timeout and body limit — for tests that assert
@@ -57,9 +68,16 @@ impl TestClient {
     where
         S: Clone + Send + Sync + 'static,
     {
-        Self::build(
-            router,
-            state,
+        Self::from_app_with_stack(App::new(state).routes(router), timeout, body_limit)
+    }
+
+    /// Build a client from an [`App`] with custom timeout and body limit.
+    pub fn from_app_with_stack<S>(app: App<S>, timeout: Duration, body_limit: usize) -> Self
+    where
+        S: Clone + Send + Sync + 'static,
+    {
+        Self::build_from_app(
+            app,
             StackConfig {
                 timeout,
                 body_limit,
@@ -68,14 +86,15 @@ impl TestClient {
         )
     }
 
-    fn build<S>(router: Router<S>, state: S, config: StackConfig) -> Self
+    fn build_from_app<S>(app: App<S>, config: StackConfig) -> Self
     where
         S: Clone + Send + Sync + 'static,
     {
-        // A fresh, never-cancelled token stands in for the process shutdown token.
+        let state = app.state.clone();
         let shutdown = CancellationToken::new();
+        let router = app.into_axum_router();
         TestClient {
-            service: stack::apply(router.into_inner(), config, shutdown).with_state(state),
+            service: stack::apply(router, config, shutdown).with_state(state),
         }
     }
 
