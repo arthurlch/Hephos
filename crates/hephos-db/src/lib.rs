@@ -22,10 +22,17 @@ use sqlx::postgres::{PgPool, PgPoolOptions};
 /// | `HEPHOS_DB_MAX_CONNECTIONS`         | `16`    | Max pooled connections.            |
 /// | `HEPHOS_DB_ACQUIRE_TIMEOUT_SECS`    | `10`    | Max wait to acquire a connection.  |
 /// | `HEPHOS_DB_STATEMENT_TIMEOUT_SECS`  | `30`    | Server-side per-statement timeout. |
+// `#[non_exhaustive]`: pool tuning grows (idle timeout, min connections, …); a struct
+// literal in app code must not break. Start from `PoolConfig::default()` and adjust.
 #[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
 pub struct PoolConfig {
+    /// Maximum number of pooled connections.
     pub max_connections: u32,
+    /// Maximum time to wait for a free connection before erroring.
     pub acquire_timeout: Duration,
+    /// Server-side `statement_timeout` installed on every connection, so one stuck
+    /// query cannot pin a connection indefinitely.
     pub statement_timeout: Duration,
 }
 
@@ -87,15 +94,20 @@ impl Db {
         Ok(Db { pool })
     }
 
-    /// Build a pool **without** opening a connection — SQLx connects lazily on first
-    /// use. Startup never blocks on the database, and offline tests (e.g. the
-    /// `routes_build` canary) can construct application state without a live server.
-    /// Shares `connect_with`'s options (including the server-side statement timeout,
-    /// installed on each connection when it is actually opened) with the default
-    /// [`PoolConfig`] — env-based tuning is only applied by `connect_from_env`. No
-    /// connection is attempted here, so this fails only on a URL SQLx cannot parse.
+    /// Build a pool **without** opening a connection, using the default [`PoolConfig`].
+    /// SQLx connects lazily on first use, so startup never blocks on the database and
+    /// offline tests (e.g. the `routes_build` canary) can construct application state
+    /// without a live server. See [`Db::connect_lazy_with`] to pass explicit config.
     pub fn connect_lazy(url: &str) -> Result<Self> {
-        let pool = pool_options(&PoolConfig::default())
+        Self::connect_lazy_with(url, PoolConfig::default())
+    }
+
+    /// Build a lazy pool with explicit config — the lazy counterpart of
+    /// [`Db::connect_with`]. Shares its options (including the server-side statement
+    /// timeout, installed on each connection when it is actually opened). No connection
+    /// is attempted here, so this fails only on a URL SQLx cannot parse.
+    pub fn connect_lazy_with(url: &str, config: PoolConfig) -> Result<Self> {
+        let pool = pool_options(&config)
             .connect_lazy(url)
             .map_err(into_internal)?;
         Ok(Db { pool })
@@ -136,10 +148,13 @@ pub struct Tx {
 }
 
 impl Tx {
+    /// Commit the transaction, persisting every statement run through [`Tx::exec`].
     pub async fn commit(self) -> Result<()> {
         self.inner.commit().await.map_err(into_internal)
     }
 
+    /// Roll back the transaction explicitly. Dropping a `Tx` without committing also
+    /// rolls back, so this is only needed to roll back early and surface any error.
     pub async fn rollback(self) -> Result<()> {
         self.inner.rollback().await.map_err(into_internal)
     }
@@ -289,12 +304,14 @@ fn pool_options(config: &PoolConfig) -> PgPoolOptions {
         })
 }
 
+// Build via `From<anyhow::Error>` rather than the `Error::Internal` variant literal:
+// `Error` is `#[non_exhaustive]`, so sibling crates construct it through its conversions.
 fn into_internal(error: sqlx::Error) -> Error {
-    Error::Internal(anyhow::Error::new(error))
+    anyhow::Error::new(error).into()
 }
 
 fn into_internal_migrate(error: sqlx::migrate::MigrateError) -> Error {
-    Error::Internal(anyhow::Error::new(error))
+    anyhow::Error::new(error).into()
 }
 
 fn env_or<T>(key: &str, default: T) -> Result<T>

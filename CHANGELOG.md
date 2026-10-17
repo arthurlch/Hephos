@@ -5,6 +5,20 @@ All notable changes to Hephos are recorded here. Format follows
 
 ## [Unreleased]
 
+### Changed (0.1.0 — API stabilization, in progress)
+- **First public API review pass.** Froze the stable surface ahead of `0.1.0`:
+  - `Error`, `Config`, and `PoolConfig` are now `#[non_exhaustive]`, so adding a
+    variant/field later is not a breaking change. App code is unaffected (errors are
+    built via `Error::*` helpers; config via `*_from_env`/`Default`).
+  - The **`agent` and `mcp` features are documented as pre-1.0 / unstable** — their
+    provider and server seams still have placeholders and are not covered by the 0.1.0
+    stability promise (scheduled for `0.5.0`/`0.6.0`).
+  - Added `Db::connect_lazy_with(url, config)` to close the asymmetric constructor
+    family (`connect`/`connect_with`/`connect_lazy`/`connect_lazy_with`).
+  - Doc-comment gaps filled on load-bearing public items: `Tx::commit`/`rollback`,
+    `Error::not_found`/`invalid`/`conflict`, and the `Config`/`PoolConfig`/`LogFormat`
+    fields and variants.
+
 ### Added (0.0.4 — Auth & authz hardening)
 - **Baseline security headers** on every response, set by the standard stack:
   `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy:
