@@ -18,9 +18,14 @@ use crate::error::{Error, Result};
 /// | `HEPHOS_BODY_LIMIT`   | `2097152`      | Max request body size, in bytes (2 MiB). |
 /// | `HEPHOS_HSTS`         | `off`          | Send `Strict-Transport-Security` (only behind TLS). |
 /// | `HEPHOS_CORS_ORIGINS` | *(unset)*      | Comma-separated allowed origins, or `*`. Unset = no CORS. |
+// `#[non_exhaustive]`: the framework-config surface grows as new knobs are added, and a
+// struct literal in app code must not break. Construct via `Config::from_env`.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct Config {
+    /// Address the server binds and listens on (`HEPHOS_ADDR`).
     pub addr: SocketAddr,
+    /// Log output format (`HEPHOS_LOG`): human-readable or structured JSON.
     pub log: LogFormat,
     /// Ceiling on how long a handler may take to produce a response. This bounds
     /// response *generation*, not body streaming, so SSE/WebSocket handlers (which
@@ -37,9 +42,12 @@ pub struct Config {
     pub cors_origins: Option<Vec<String>>,
 }
 
+/// How logs are formatted (`HEPHOS_LOG`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LogFormat {
+    /// Human-readable, colorized output — for local development.
     Pretty,
+    /// One JSON object per line — for log aggregation in production.
     Json,
 }
 

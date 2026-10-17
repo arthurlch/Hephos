@@ -8,6 +8,10 @@
 //! The payoff: a tool written once (strongly typed input/output, validation,
 //! authorization) is callable by a Hephos [`hephos_agent::Agent`] *and* exposable to
 //! any MCP client, with no second implementation.
+//!
+//! **Stability: pre-1.0 / unstable.** This crate is not part of the `0.1.0` stable API.
+//! The server wiring (`McpServer::into_route`, `serve_stdio`) still has placeholder
+//! implementations and its signatures may change before `0.6.0`.
 
 #![forbid(unsafe_code)]
 

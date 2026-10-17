@@ -12,7 +12,12 @@ use serde::Serialize;
 /// Each variant maps to exactly one HTTP status. [`Error::Internal`] is the
 /// escape hatch for anything unexpected: its full cause chain is logged, but the
 /// response body never leaks internal detail.
+// `#[non_exhaustive]`: new variants (a future auth or rate-limit status, say) must not
+// break a downstream `match` after 1.0. App code constructs errors via the `Error::*`
+// helpers and maps them through `IntoResponse`, so this costs apps nothing; external
+// code that matches must add a `_` arm.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum Error {
     #[error("not found: {0}")]
     NotFound(String),
@@ -52,14 +57,18 @@ impl From<sqlx::Error> for Error {
 }
 
 impl Error {
+    /// A `404`: the named resource does not exist, e.g. `Error::not_found("user")`.
     pub fn not_found(what: impl Into<String>) -> Self {
         Error::NotFound(what.into())
     }
 
+    /// A `400`: the request broke a business rule. The message is shown to the client,
+    /// e.g. `Error::invalid("email is required")`.
     pub fn invalid(msg: impl Into<String>) -> Self {
         Error::Invalid(msg.into())
     }
 
+    /// A `409`: the request conflicts with current state, e.g. a duplicate unique key.
     pub fn conflict(msg: impl Into<String>) -> Self {
         Error::Conflict(msg.into())
     }
