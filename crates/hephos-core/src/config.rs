@@ -44,6 +44,9 @@ pub struct Config {
     pub cors_origins: Option<Vec<String>>,
     /// Rate limit configuration. `None` disables rate limiting (the default).
     pub rate_limit: Option<RateLimitConfig>,
+    /// Maximum concurrent in-flight requests before load shedding triggers. `None`
+    /// disables concurrency limits and load shedding (the default).
+    pub concurrency_limit: Option<usize>,
 }
 
 /// Rate limiting configuration (`HEPHOS_RATE_LIMIT_RPS`, `HEPHOS_RATE_LIMIT_BURST`).
@@ -83,6 +86,7 @@ struct RawEnv<'a> {
     cors_origins: Option<&'a str>,
     rate_limit_rps: Option<&'a str>,
     rate_limit_burst: Option<&'a str>,
+    concurrency_limit: Option<&'a str>,
 }
 
 impl Config {
@@ -95,6 +99,7 @@ impl Config {
         let cors_origins = std::env::var("HEPHOS_CORS_ORIGINS").ok();
         let rate_limit_rps = std::env::var("HEPHOS_RATE_LIMIT_RPS").ok();
         let rate_limit_burst = std::env::var("HEPHOS_RATE_LIMIT_BURST").ok();
+        let concurrency_limit = std::env::var("HEPHOS_CONCURRENCY_LIMIT").ok();
 
         Self::parse(RawEnv {
             addr: addr.as_deref(),
@@ -105,6 +110,7 @@ impl Config {
             cors_origins: cors_origins.as_deref(),
             rate_limit_rps: rate_limit_rps.as_deref(),
             rate_limit_burst: rate_limit_burst.as_deref(),
+            concurrency_limit: concurrency_limit.as_deref(),
         })
     }
 
@@ -201,6 +207,23 @@ impl Config {
             (None, None) => None,
         };
 
+        let concurrency_limit = match env.concurrency_limit {
+            Some(value) => {
+                let limit = value.parse::<usize>().map_err(|_| {
+                    Error::invalid(format!(
+                        "HEPHOS_CONCURRENCY_LIMIT must be a positive integer: {value}"
+                    ))
+                })?;
+                if limit == 0 {
+                    return Err(Error::invalid(
+                        "HEPHOS_CONCURRENCY_LIMIT must be greater than zero",
+                    ));
+                }
+                Some(limit)
+            }
+            None => None,
+        };
+
         Ok(Config {
             addr,
             log,
@@ -209,6 +232,7 @@ impl Config {
             hsts,
             cors_origins,
             rate_limit,
+            concurrency_limit,
         })
     }
 }
@@ -235,6 +259,7 @@ mod tests {
         assert!(!config.hsts);
         assert_eq!(config.cors_origins, None);
         assert_eq!(config.rate_limit, None);
+        assert_eq!(config.concurrency_limit, None);
     }
 
     #[test]
@@ -248,6 +273,7 @@ mod tests {
             cors_origins: Some("https://a.example, https://b.example"),
             rate_limit_rps: Some("100"),
             rate_limit_burst: Some("250"),
+            concurrency_limit: Some("64"),
         })
         .unwrap();
         assert_eq!(config.addr.port(), 9000);
@@ -272,6 +298,7 @@ mod tests {
                 burst: 250
             })
         );
+        assert_eq!(config.concurrency_limit, Some(64));
     }
 
     #[test]
@@ -334,6 +361,26 @@ mod tests {
         assert!(matches!(
             Config::parse(RawEnv {
                 rate_limit_burst: Some("10"),
+                ..Default::default()
+            })
+            .unwrap_err(),
+            Error::Invalid(_)
+        ));
+    }
+
+    #[test]
+    fn concurrency_limit_rejects_invalid_values() {
+        assert!(matches!(
+            Config::parse(RawEnv {
+                concurrency_limit: Some("0"),
+                ..Default::default()
+            })
+            .unwrap_err(),
+            Error::Invalid(_)
+        ));
+        assert!(matches!(
+            Config::parse(RawEnv {
+                concurrency_limit: Some("invalid"),
                 ..Default::default()
             })
             .unwrap_err(),

@@ -550,6 +550,7 @@ raise it rather than scattering ad-hoc responses.
 | `Forbidden` | `Error::Forbidden` | 403 | `"forbidden"` |
 | `Conflict(String)` | `Error::conflict(msg)` | 409 | the message |
 | `RateLimited(String)` | `Error::rate_limited(msg)` | 429 | the message |
+| `Unavailable(String)` | `Error::unavailable(msg)` | 503 | the message |
 | `Internal(anyhow::Error)` | `?` / `Error::internal(msg)` | 500 | `"internal error"` |
 
 Response body is always `{ "error": { "kind": "...", "message": "..." } }`.

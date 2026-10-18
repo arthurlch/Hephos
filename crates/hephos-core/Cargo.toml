@@ -10,7 +10,7 @@ description = "Hephos core: App, Ctx, Error, Router, extractors, config, tasks, 
 [dependencies]
 tokio = { workspace = true }
 tokio-util = { workspace = true }
-tower = { workspace = true }
+tower = { workspace = true, features = ["limit", "load-shed"] }
 tower-http = { workspace = true }
 tower_governor = { workspace = true }
 axum = { workspace = true }

@@ -16,6 +16,17 @@ All notable changes to Hephos are recorded here. Format follows
   (`TokenReaper` in `tasks/reaper.rs`) that periodically purges dead security rows (expired or
   revoked `refresh_tokens` and `api_keys`) on a configurable grace window, keeping security tables
   bounded in production.
+- **Load shedding & concurrency limiting in the standard stack**: global in-flight request
+  bounding via `tower::limit::GlobalConcurrencyLimitLayer` and `tower::load_shed::LoadShedLayer`.
+  Configured via `HEPHOS_CONCURRENCY_LIMIT` or programmatically via `App::concurrency_limit(limit)` /
+  `TestClient::with_concurrency_limit`. Saturated servers immediately shed excess load with `503 Service Unavailable`
+  (`{"error":{"kind":"unavailable","message":"service overloaded, shedding load"}}`), preventing in-memory
+  request buffering and cascading latency failures under overload. Health probes (`/health`, `/ready`)
+  are cleanly excluded from load shedding and remain responsive under load.
+- **Strict cargo-deny policy and CI enforcement**: configured `deny.toml` with documented advisory
+  exemptions for transitive crates, permissive licenses including `CDLA-Permissive-2.0`, and allowed
+  workspace wildcard paths. Removed `continue-on-error` from GitHub Actions CI so supply-chain security
+  checks are strictly enforced.
 - **Rate limiting via `tower-governor` GCRA in the standard stack**: per-IP rate limiting
   configured via `HEPHOS_RATE_LIMIT_RPS` and `HEPHOS_RATE_LIMIT_BURST` or programmatically via
   `App::rate_limit(rps, burst)` / `TestClient::with_rate_limit`. Uses `SmartIpKeyExtractor`

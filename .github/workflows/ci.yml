@@ -134,9 +134,6 @@ jobs:
   deny:
     name: cargo-deny
     runs-on: ubuntu-latest
-    # Advisory for 0.0.x (non-blocking). The official action handles workspace
-    # dependency resolution correctly (the bare CLI tripped on inherited deps).
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: EmbarkStudios/cargo-deny-action@v2

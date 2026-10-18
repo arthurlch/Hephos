@@ -203,6 +203,17 @@ innermost:
    shutdown token**, so a graceful shutdown cancels in-flight work. On client
    disconnect the handler future and any streaming body are dropped by the runtime,
    which stops the work regardless.
+5. **Panic isolation** (`CatchPanicLayer`, innermost in outer stack) — catches handler
+   panics and turns them into opaque 500 responses (`Error::Internal`) while keeping
+   the server alive and tracing the panic cause.
+
+On application routes (specifically excluding `/health` and `/ready` probes, so probes
+are never blocked by traffic saturation):
+- **Rate limiting** (when `HEPHOS_RATE_LIMIT_RPS` is configured or set via `App::rate_limit`) —
+  `tower-governor` GCRA rate limiter per IP, returning `429 Too Many Requests`.
+- **Load shedding & Concurrency limit** (when `HEPHOS_CONCURRENCY_LIMIT` is configured or set
+  via `App::concurrency_limit`) — `GlobalConcurrencyLimitLayer` bounded by `LoadShedLayer`,
+  fast-failing excess requests immediately with `503 Service Unavailable`.
 
 Authentication is **not** in the standard stack. It is an app-level `route_layer`
 (so it runs only on matched routes — an unmatched path stays `404`, never `401`) that
@@ -274,8 +285,13 @@ the HTTP contract, few enough variants to hold in mind.
 - **Backpressure & bounded concurrency:** fan-out uses bounded primitives
   (`buffered(N)`, `Semaphore`). Channels are bounded. The event bus has a fixed
   per-subscriber buffer and surfaces lag rather than growing without limit.
-- **Timeouts:** the request stack has a timeout; outbound calls (DB pool, HTTP
-  clients, agent runs) each carry their own. No unbounded await on the network.
+  At the HTTP boundary, when `HEPHOS_CONCURRENCY_LIMIT` is set, `LoadShedLayer` combined
+  with `GlobalConcurrencyLimitLayer` implements fast-failure backpressure: excess requests
+  over the concurrency ceiling are immediately shed with `503 Service Unavailable`
+  rather than queuing indefinitely in memory. This prevents queue buildup, spiraling
+  latencies, and OOM crashes under overload, while allowing load balancers and upstream
+  callers to back off or re-route. Probes (`/health`, `/ready`) bypass load shedding so
+  health checks succeed reliably during traffic spikes.
 
 **Why native async traits (not `async-trait`)?** On edition 2024 / Rust 1.85,
 `async fn` in traits and RPITIT are stable. Hephos uses them directly

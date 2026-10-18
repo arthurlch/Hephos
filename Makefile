@@ -1,9 +1,11 @@
 # Canonical commands. CI runs the same ones; keep them in sync.
 # Offline targets exclude the database-backed examples (they need Postgres).
 
+export PATH := /opt/homebrew/bin:$(HOME)/.cargo/bin:$(PATH)
+
 OFFLINE := --workspace --exclude example-database --exclude example-auth
 
-.PHONY: ci fmt fmt-check lint arch-lint test nextest build run-rest run-streaming run-websocket clean
+.PHONY: ci fmt fmt-check lint arch-lint deny test nextest build run-rest run-streaming run-websocket clean
 
 ## ci: what GitHub Actions runs for the offline baseline
 ci: fmt-check lint arch-lint test
@@ -20,6 +22,10 @@ lint:
 ## arch-lint: enforce the AGENTS.md §2 layering boundaries on app code
 arch-lint:
 	./scripts/arch-lint.sh
+
+## deny: check advisories, licenses, and bans with cargo-deny
+deny:
+	cargo deny check
 
 test:
 	cargo test --locked --all-features $(OFFLINE)
