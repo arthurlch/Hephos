@@ -9,7 +9,7 @@ use tokio::net::TcpListener;
 use tokio::signal;
 use tokio_util::sync::CancellationToken;
 
-use crate::config::{Config, LogFormat, RateLimitConfig};
+use crate::config::{Config, RateLimitConfig};
 use crate::ctx::Ctx;
 use crate::error::{Error, Result};
 use crate::router::Router;
@@ -72,6 +72,9 @@ pub struct App<S> {
     readiness: Option<ReadinessCheck>,
     pub(crate) rate_limit: Option<RateLimitConfig>,
     pub(crate) concurrency_limit: Option<usize>,
+    pub(crate) otlp_endpoint: Option<String>,
+    pub(crate) traces_enabled: Option<bool>,
+    pub(crate) metrics: Option<crate::telemetry::RedMetrics>,
 }
 
 impl<S> App<S>
@@ -86,6 +89,9 @@ where
             readiness: None,
             rate_limit: None,
             concurrency_limit: None,
+            otlp_endpoint: None,
+            traces_enabled: None,
+            metrics: None,
         }
     }
 
@@ -147,6 +153,30 @@ where
         self
     }
 
+    /// Configure the OTLP exporter endpoint (e.g. `http://localhost:4318`).
+    ///
+    /// When configured, metrics and logs are exported via standard OTLP HTTP.
+    /// Overrides environment variable `HEPHOS_OTLP_ENDPOINT` / `OTEL_EXPORTER_OTLP_ENDPOINT`.
+    pub fn otlp_endpoint(mut self, endpoint: impl Into<String>) -> Self {
+        self.otlp_endpoint = Some(endpoint.into());
+        self
+    }
+
+    /// Enable or disable distributed tracing export.
+    ///
+    /// Tracing export is gated (defaults to off while upstream OpenTelemetry tracing is beta).
+    /// Overrides environment variable `HEPHOS_TRACES` / `HEPHOS_OTEL_TRACES`.
+    pub fn traces(mut self, enabled: bool) -> Self {
+        self.traces_enabled = Some(enabled);
+        self
+    }
+
+    /// Provide custom RED metrics instruments.
+    pub fn metrics(mut self, metrics: crate::telemetry::RedMetrics) -> Self {
+        self.metrics = Some(metrics);
+        self
+    }
+
     /// Split into application router and auto-mounted probe router (`/health`, `/ready`).
     pub(crate) fn into_routers(self) -> (axum::Router<S>, axum::Router<S>) {
         let readiness = self.readiness;
@@ -164,11 +194,18 @@ where
     /// shutdown signal, then drain in-flight requests and tasks.
     pub async fn run(self) -> Result<()> {
         let config = Config::from_env()?;
-        init_tracing(config.log);
+        let otlp_endpoint = self.otlp_endpoint.or(config.otlp_endpoint);
+        let traces_enabled = self.traces_enabled.unwrap_or(config.traces_enabled);
+        let telemetry_config = crate::telemetry::TelemetryConfig {
+            otlp_endpoint,
+            traces_enabled,
+        };
+        let telemetry_handles = crate::telemetry::init_telemetry(config.log, &telemetry_config)?;
 
         let shutdown = CancellationToken::new();
         let rate_limit = self.rate_limit.or(config.rate_limit);
         let concurrency_limit = self.concurrency_limit.or(config.concurrency_limit);
+        let metrics = self.metrics.unwrap_or_default();
         let App {
             state,
             router,
@@ -176,6 +213,9 @@ where
             readiness,
             rate_limit: _,
             concurrency_limit: _,
+            otlp_endpoint: _,
+            traces_enabled: _,
+            metrics: _,
         } = self;
 
         // Background tasks share the app's shutdown token.
@@ -197,6 +237,7 @@ where
             cors_origins: config.cors_origins.clone(),
             rate_limit,
             concurrency_limit,
+            metrics,
         };
         let probe_router = axum::Router::new()
             .route("/health", axum::routing::get(health_handler))
@@ -250,19 +291,11 @@ where
                 }
             }
         }
+
+        // Flush telemetry providers (metrics, logs, traces)
+        telemetry_handles.shutdown();
+
         Ok(())
-    }
-}
-
-fn init_tracing(format: LogFormat) {
-    use tracing_subscriber::{EnvFilter, fmt, prelude::*};
-
-    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
-
-    let registry = tracing_subscriber::registry().with(filter);
-    match format {
-        LogFormat::Json => registry.with(fmt::layer().json()).init(),
-        LogFormat::Pretty => registry.with(fmt::layer()).init(),
     }
 }
 

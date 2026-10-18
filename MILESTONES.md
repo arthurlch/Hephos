@@ -262,12 +262,12 @@ and handles the two canonical simulations from `ARCHITECTURE.md §24` end-to-end
 **Theme.** You can see it and run it in production.
 
 **Ship.**
-- OpenTelemetry integration via `tracing-opentelemetry` + `opentelemetry-appender-tracing`:
+- ✅ OpenTelemetry integration via `tracing-opentelemetry` + `opentelemetry-appender-tracing`:
   **logs and metrics on by default** (both are stable upstream), **traces behind a
   flag** (upstream traces are still beta — we adopt, but gate). OTLP export configurable.
-- RED metrics (request rate, errors, duration), labeled by **route template**
+- ✅ RED metrics (request rate, errors, duration), labeled by **route template**
   (`/users/{id}`), never raw path — unbounded label cardinality would take down the
-  metrics backend, so this is a correctness requirement, not a nicety.
+  metrics backend, so this is a correctness requirement, not a nicety. Fallback to `"__unmatched__"` on 404.
 - ✅ `/health` (liveness) and `/ready` (readiness incl. DB check) endpoints, canonical.
 - ✅ Panic isolation: a handler panic becomes a logged `500`, never a crash
   (`CatchPanicLayer`, innermost in the standard stack).

@@ -527,13 +527,24 @@ a future, additive concern; v1 is Postgres.
 
 ## 18. Observability
 
-One mechanism: `tracing`. One subscriber, installed by `App::run`, `pretty` or
-`json` by env. Every request is a span carrying method, path, and request id;
-`Error::Internal` logs its cause chain. The agent layer and tasks run inside the
-same span tree, so a trace follows a request from HTTP through service, repo,
-agent, and tool. There is no second logging facade and no metrics framework in v1
-(metrics are an additive concern; `tracing` spans are the substrate they would be
-derived from).
+One unified observability substrate built on `tracing` and OpenTelemetry:
+- **Tracing subscriber**: Installed by `App::run`, configured via `HEPHOS_LOG` (`json`
+  or `pretty`). Every request executes within a span carrying `request_id`, `method`,
+  and `path`. `Error::Internal` logs its full cause chain server-side while presenting
+  an opaque `500` to clients.
+- **OpenTelemetry & OTLP export**: Configured via `HEPHOS_OTLP_ENDPOINT` (or
+  `OTEL_EXPORTER_OTLP_ENDPOINT`). Standard OTLP HTTP transport exports logs and metrics
+  by default (both stable upstream). Distributed tracing export is gated behind
+  `HEPHOS_TRACES` / `HEPHOS_OTEL_TRACES` (defaults to off while upstream OpenTelemetry
+  tracing is beta). Exporter providers are flushed and cleanly shut down on process drain.
+- **RED metrics (Rate, Errors, Duration)**: Standard instruments (`http.server.requests`,
+  `http.server.request.duration`, `http.server.errors`) recorded for all HTTP traffic.
+  Labels are strictly constrained to `http.request.method`, `http.route`, and
+  `http.response.status_code`. Routes are **always** labeled by matched route template
+  (e.g. `/users/{id}`), never raw request paths, with unmatched routes falling back to
+  bounded `"__unmatched__"`. This guarantees bounded label cardinality, preventing
+  metrics backend exhaustion in production. Probes (`/health`, `/ready`) are recorded
+  under their respective route templates.
 
 ---
 
