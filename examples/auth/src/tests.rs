@@ -371,21 +371,22 @@ async fn owner_can_crud_note_but_others_get_403() {
 async fn reaper_purges_expired_and_revoked_tokens() {
     let state = AppState::init().await.unwrap();
     let client = TestClient::new(api::routes(state.auth.clone()), state.clone());
-    let creds = json!({ "email": "reaper@example.com", "password": "correct horse battery" });
+    let creds = json!({ "email": "reaper_admin@example.com", "password": "correct horse battery" });
 
     assert_eq!(
         client.post_json("/auth/register", &creds).await.status(),
         200
     );
+    promote_to_admin("reaper_admin@example.com").await;
 
     let login = client.post_json("/auth/login", &creds).await;
     assert_eq!(login.status(), 200);
     let (access, refresh) = tokens(&login.json::<Value>());
 
-    // Create an API key.
+    // Admin creates an API key.
     let key_res = client
         .post_json_with_token(
-            "/auth/api-keys",
+            "/api-keys",
             &access,
             &json!({ "name": "reaper-key", "roles": ["read"] }),
         )
@@ -400,9 +401,9 @@ async fn reaper_purges_expired_and_revoked_tokens() {
     assert_eq!(logout_res.status(), 200);
 
     let revoke_key_res = client
-        .delete_with_token(&format!("/auth/api-keys/{key_id}"), &access)
+        .delete_with_token(&format!("/api-keys/{key_id}"), &access)
         .await;
-    assert_eq!(revoke_key_res.status(), 200);
+    assert_eq!(revoke_key_res.status(), 204);
 
     // Run reaper with zero grace period so recently-revoked tokens are purged.
     let summary = state
