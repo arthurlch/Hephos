@@ -86,15 +86,26 @@ impl TestClient {
         )
     }
 
-    fn build_from_app<S>(app: App<S>, config: StackConfig) -> Self
+    /// Build a client with explicit rate limiting (requests per second and burst capacity).
+    pub fn with_rate_limit<S>(router: Router<S>, state: S, rps: u64, burst: u32) -> Self
     where
         S: Clone + Send + Sync + 'static,
     {
+        Self::from_app(App::new(state).routes(router).rate_limit(rps, burst))
+    }
+
+    fn build_from_app<S>(app: App<S>, mut config: StackConfig) -> Self
+    where
+        S: Clone + Send + Sync + 'static,
+    {
+        if let Some(rl) = app.rate_limit {
+            config.rate_limit = Some(rl);
+        }
         let state = app.state.clone();
         let shutdown = CancellationToken::new();
-        let router = app.into_axum_router();
+        let (app_router, probe_router) = app.into_routers();
         TestClient {
-            service: stack::apply(router, config, shutdown).with_state(state),
+            service: stack::apply(app_router, probe_router, config, shutdown).with_state(state),
         }
     }
 

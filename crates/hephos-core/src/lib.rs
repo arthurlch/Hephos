@@ -22,7 +22,7 @@ mod task;
 pub mod test;
 
 pub use app::{App, ProbeResponse};
-pub use config::{Config, LogFormat};
+pub use config::{Config, LogFormat, RateLimitConfig};
 pub use ctx::Ctx;
 pub use error::{Error, Result};
 pub use event::{Event, Events};

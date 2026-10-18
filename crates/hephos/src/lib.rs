@@ -21,7 +21,8 @@
 
 pub use hephos_core::{
     App, CancellationToken, Config, Ctx, Error, Event, Events, Identity, Json, LogFormat, Path,
-    Principal, ProbeResponse, Query, Result, Router, StatusCode, Task, http, sse, test, ws,
+    Principal, ProbeResponse, Query, RateLimitConfig, Result, Router, StatusCode, Task, http, sse,
+    test, ws,
 };
 
 #[cfg(feature = "db")]

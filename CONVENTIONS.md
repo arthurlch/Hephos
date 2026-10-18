@@ -549,6 +549,7 @@ raise it rather than scattering ad-hoc responses.
 | `Unauthorized` | `Error::Unauthorized` | 401 | `"unauthorized"` |
 | `Forbidden` | `Error::Forbidden` | 403 | `"forbidden"` |
 | `Conflict(String)` | `Error::conflict(msg)` | 409 | the message |
+| `RateLimited(String)` | `Error::rate_limited(msg)` | 429 | the message |
 | `Internal(anyhow::Error)` | `?` / `Error::internal(msg)` | 500 | `"internal error"` |
 
 Response body is always `{ "error": { "kind": "...", "message": "..." } }`.

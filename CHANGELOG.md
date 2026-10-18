@@ -16,6 +16,15 @@ All notable changes to Hephos are recorded here. Format follows
   (`TokenReaper` in `tasks/reaper.rs`) that periodically purges dead security rows (expired or
   revoked `refresh_tokens` and `api_keys`) on a configurable grace window, keeping security tables
   bounded in production.
+- **Rate limiting via `tower-governor` GCRA in the standard stack**: per-IP rate limiting
+  configured via `HEPHOS_RATE_LIMIT_RPS` and `HEPHOS_RATE_LIMIT_BURST` or programmatically via
+  `App::rate_limit(rps, burst)` / `TestClient::with_rate_limit`. Uses `SmartIpKeyExtractor`
+  (extracting client IP from `ConnectInfo<SocketAddr>` or `x-forwarded-for` / `x-real-ip` headers)
+  and emits standard rate limit response headers (`x-ratelimit-after`, `x-ratelimit-limit`,
+  `x-ratelimit-remaining`, `retry-after`). Rate-limited requests return status `429` with error
+  contract `{"error":{"kind":"rate_limited","message":"too many requests"}}`. Probes (`/health`,
+  `/ready`) are cleanly excluded from rate limiting and remain accessible even under heavy traffic.
+  A background reaper runs against cancellation to periodically evict idle IP state.
 - **Canonical `/health` and `/ready` probes** (`0.2.0`): `/health` (liveness) is
   auto-mounted by `App` and returns `200` (`{"status":"ok"}`); `/ready` (readiness)
   defaults to `200` (`{"status":"ready"}`) and supports custom async checks via

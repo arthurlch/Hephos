@@ -16,8 +16,10 @@ use crate::error::{Error, Result};
 /// | `HEPHOS_LOG`          | `pretty`       | `pretty` or `json` log output.       |
 /// | `HEPHOS_TIMEOUT_SECS` | `30`           | Per-request response-generation timeout. |
 /// | `HEPHOS_BODY_LIMIT`   | `2097152`      | Max request body size, in bytes (2 MiB). |
-/// | `HEPHOS_HSTS`         | `off`          | Send `Strict-Transport-Security` (only behind TLS). |
-/// | `HEPHOS_CORS_ORIGINS` | *(unset)*      | Comma-separated allowed origins, or `*`. Unset = no CORS. |
+/// | `HEPHOS_HSTS`             | `off`          | Send `Strict-Transport-Security` (only behind TLS). |
+/// | `HEPHOS_CORS_ORIGINS`     | *(unset)*      | Comma-separated allowed origins, or `*`. Unset = no CORS. |
+/// | `HEPHOS_RATE_LIMIT_RPS`   | *(unset)*      | Quota replenishment in requests/sec per IP. Unset = disabled. |
+/// | `HEPHOS_RATE_LIMIT_BURST` | *(same as RPS)*| Maximum burst capacity per IP. |
 // `#[non_exhaustive]`: the framework-config surface grows as new knobs are added, and a
 // struct literal in app code must not break. Construct via `Config::from_env`.
 #[derive(Debug, Clone)]
@@ -40,6 +42,23 @@ pub struct Config {
     /// Allowed CORS origins. `None` means no CORS layer (same-origin only, the safe
     /// default). `Some(["*"])` allows any origin; otherwise an explicit allow-list.
     pub cors_origins: Option<Vec<String>>,
+    /// Rate limit configuration. `None` disables rate limiting (the default).
+    pub rate_limit: Option<RateLimitConfig>,
+}
+
+/// Rate limiting configuration (`HEPHOS_RATE_LIMIT_RPS`, `HEPHOS_RATE_LIMIT_BURST`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RateLimitConfig {
+    /// Quota replenishment rate in requests per second.
+    pub rps: u64,
+    /// Maximum burst capacity allowed before rate limiting triggers.
+    pub burst: u32,
+}
+
+impl RateLimitConfig {
+    pub fn new(rps: u64, burst: u32) -> Self {
+        RateLimitConfig { rps, burst }
+    }
 }
 
 /// How logs are formatted (`HEPHOS_LOG`).
@@ -54,37 +73,53 @@ pub enum LogFormat {
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
 const DEFAULT_BODY_LIMIT: usize = 2 * 1024 * 1024;
 
+#[derive(Default)]
+struct RawEnv<'a> {
+    addr: Option<&'a str>,
+    log: Option<&'a str>,
+    timeout_secs: Option<&'a str>,
+    body_limit: Option<&'a str>,
+    hsts: Option<&'a str>,
+    cors_origins: Option<&'a str>,
+    rate_limit_rps: Option<&'a str>,
+    rate_limit_burst: Option<&'a str>,
+}
+
 impl Config {
     pub fn from_env() -> Result<Self> {
-        Self::parse(
-            std::env::var("HEPHOS_ADDR").ok().as_deref(),
-            std::env::var("HEPHOS_LOG").ok().as_deref(),
-            std::env::var("HEPHOS_TIMEOUT_SECS").ok().as_deref(),
-            std::env::var("HEPHOS_BODY_LIMIT").ok().as_deref(),
-            std::env::var("HEPHOS_HSTS").ok().as_deref(),
-            std::env::var("HEPHOS_CORS_ORIGINS").ok().as_deref(),
-        )
+        let addr = std::env::var("HEPHOS_ADDR").ok();
+        let log = std::env::var("HEPHOS_LOG").ok();
+        let timeout_secs = std::env::var("HEPHOS_TIMEOUT_SECS").ok();
+        let body_limit = std::env::var("HEPHOS_BODY_LIMIT").ok();
+        let hsts = std::env::var("HEPHOS_HSTS").ok();
+        let cors_origins = std::env::var("HEPHOS_CORS_ORIGINS").ok();
+        let rate_limit_rps = std::env::var("HEPHOS_RATE_LIMIT_RPS").ok();
+        let rate_limit_burst = std::env::var("HEPHOS_RATE_LIMIT_BURST").ok();
+
+        Self::parse(RawEnv {
+            addr: addr.as_deref(),
+            log: log.as_deref(),
+            timeout_secs: timeout_secs.as_deref(),
+            body_limit: body_limit.as_deref(),
+            hsts: hsts.as_deref(),
+            cors_origins: cors_origins.as_deref(),
+            rate_limit_rps: rate_limit_rps.as_deref(),
+            rate_limit_burst: rate_limit_burst.as_deref(),
+        })
     }
 
     /// Pure parsing of the inputs, split from env reading so it is testable without
     /// mutating process environment (which is `unsafe` on edition 2024 and forbidden
     /// crate-wide).
-    fn parse(
-        addr: Option<&str>,
-        log: Option<&str>,
-        timeout_secs: Option<&str>,
-        body_limit: Option<&str>,
-        hsts: Option<&str>,
-        cors_origins: Option<&str>,
-    ) -> Result<Self> {
-        let addr = match addr {
+    fn parse(env: RawEnv<'_>) -> Result<Self> {
+        let addr = match env.addr {
             Some(value) => value.parse().map_err(|_| {
                 Error::invalid(format!("HEPHOS_ADDR is not a socket address: {value}"))
             })?,
             None => SocketAddr::from(([0, 0, 0, 0], 8080)),
         };
 
-        let log = match log {
+        let log = match env.log {
             Some("json") => LogFormat::Json,
             Some("pretty") | None => LogFormat::Pretty,
             Some(other) => {
@@ -94,7 +129,7 @@ impl Config {
             }
         };
 
-        let timeout = match timeout_secs {
+        let timeout = match env.timeout_secs {
             Some(value) => {
                 let secs = value.parse::<u64>().map_err(|_| {
                     Error::invalid(format!(
@@ -106,7 +141,7 @@ impl Config {
             None => Duration::from_secs(DEFAULT_TIMEOUT_SECS),
         };
 
-        let body_limit = match body_limit {
+        let body_limit = match env.body_limit {
             Some(value) => value.parse::<usize>().map_err(|_| {
                 Error::invalid(format!("HEPHOS_BODY_LIMIT must be a byte count: {value}"))
             })?,
@@ -114,11 +149,11 @@ impl Config {
         };
 
         let hsts = matches!(
-            hsts.map(str::to_ascii_lowercase).as_deref(),
+            env.hsts.map(str::to_ascii_lowercase).as_deref(),
             Some("1" | "on" | "true" | "yes")
         );
 
-        let cors_origins = cors_origins.and_then(|value| {
+        let cors_origins = env.cors_origins.and_then(|value| {
             let origins: Vec<String> = value
                 .split(',')
                 .map(str::trim)
@@ -128,6 +163,44 @@ impl Config {
             (!origins.is_empty()).then_some(origins)
         });
 
+        let rate_limit = match (env.rate_limit_rps, env.rate_limit_burst) {
+            (Some(rps_str), burst_opt) => {
+                let rps = rps_str.parse::<u64>().map_err(|_| {
+                    Error::invalid(format!(
+                        "HEPHOS_RATE_LIMIT_RPS must be a positive integer: {rps_str}"
+                    ))
+                })?;
+                if rps == 0 {
+                    return Err(Error::invalid(
+                        "HEPHOS_RATE_LIMIT_RPS must be greater than zero",
+                    ));
+                }
+                let burst = match burst_opt {
+                    Some(burst_str) => {
+                        let burst = burst_str.parse::<u32>().map_err(|_| {
+                            Error::invalid(format!(
+                                "HEPHOS_RATE_LIMIT_BURST must be a positive integer: {burst_str}"
+                            ))
+                        })?;
+                        if burst == 0 {
+                            return Err(Error::invalid(
+                                "HEPHOS_RATE_LIMIT_BURST must be greater than zero",
+                            ));
+                        }
+                        burst
+                    }
+                    None => u32::try_from(rps).unwrap_or(u32::MAX),
+                };
+                Some(RateLimitConfig { rps, burst })
+            }
+            (None, Some(burst_str)) => {
+                return Err(Error::invalid(format!(
+                    "HEPHOS_RATE_LIMIT_BURST is set ({burst_str}) without HEPHOS_RATE_LIMIT_RPS"
+                )));
+            }
+            (None, None) => None,
+        };
+
         Ok(Config {
             addr,
             log,
@@ -135,6 +208,7 @@ impl Config {
             body_limit,
             hsts,
             cors_origins,
+            rate_limit,
         })
     }
 }
@@ -144,30 +218,37 @@ mod tests {
     use super::*;
 
     fn parse(hsts: Option<&str>, cors: Option<&str>) -> Result<Config> {
-        Config::parse(None, None, None, None, hsts, cors)
+        Config::parse(RawEnv {
+            hsts,
+            cors_origins: cors,
+            ..Default::default()
+        })
     }
 
     #[test]
     fn defaults_when_unset() {
-        let config = Config::parse(None, None, None, None, None, None).unwrap();
+        let config = Config::parse(RawEnv::default()).unwrap();
         assert_eq!(config.addr.port(), 8080);
         assert_eq!(config.log, LogFormat::Pretty);
         assert_eq!(config.timeout, Duration::from_secs(30));
         assert_eq!(config.body_limit, 2 * 1024 * 1024);
         assert!(!config.hsts);
         assert_eq!(config.cors_origins, None);
+        assert_eq!(config.rate_limit, None);
     }
 
     #[test]
     fn parses_all_fields() {
-        let config = Config::parse(
-            Some("127.0.0.1:9000"),
-            Some("json"),
-            Some("5"),
-            Some("1024"),
-            Some("on"),
-            Some("https://a.example, https://b.example"),
-        )
+        let config = Config::parse(RawEnv {
+            addr: Some("127.0.0.1:9000"),
+            log: Some("json"),
+            timeout_secs: Some("5"),
+            body_limit: Some("1024"),
+            hsts: Some("on"),
+            cors_origins: Some("https://a.example, https://b.example"),
+            rate_limit_rps: Some("100"),
+            rate_limit_burst: Some("250"),
+        })
         .unwrap();
         assert_eq!(config.addr.port(), 9000);
         assert_eq!(config.log, LogFormat::Json);
@@ -183,6 +264,13 @@ mod tests {
                 ]
                 .as_slice()
             )
+        );
+        assert_eq!(
+            config.rate_limit,
+            Some(RateLimitConfig {
+                rps: 100,
+                burst: 250
+            })
         );
     }
 
@@ -204,25 +292,91 @@ mod tests {
     }
 
     #[test]
+    fn rate_limit_burst_defaults_to_rps() {
+        let config = Config::parse(RawEnv {
+            rate_limit_rps: Some("50"),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(
+            config.rate_limit,
+            Some(RateLimitConfig { rps: 50, burst: 50 })
+        );
+    }
+
+    #[test]
+    fn rate_limit_rejects_invalid_values() {
+        assert!(matches!(
+            Config::parse(RawEnv {
+                rate_limit_rps: Some("0"),
+                ..Default::default()
+            })
+            .unwrap_err(),
+            Error::Invalid(_)
+        ));
+        assert!(matches!(
+            Config::parse(RawEnv {
+                rate_limit_rps: Some("abc"),
+                ..Default::default()
+            })
+            .unwrap_err(),
+            Error::Invalid(_)
+        ));
+        assert!(matches!(
+            Config::parse(RawEnv {
+                rate_limit_rps: Some("10"),
+                rate_limit_burst: Some("0"),
+                ..Default::default()
+            })
+            .unwrap_err(),
+            Error::Invalid(_)
+        ));
+        assert!(matches!(
+            Config::parse(RawEnv {
+                rate_limit_burst: Some("10"),
+                ..Default::default()
+            })
+            .unwrap_err(),
+            Error::Invalid(_)
+        ));
+    }
+
+    #[test]
     fn rejects_bad_addr() {
-        let err = Config::parse(Some("not-an-addr"), None, None, None, None, None).unwrap_err();
+        let err = Config::parse(RawEnv {
+            addr: Some("not-an-addr"),
+            ..Default::default()
+        })
+        .unwrap_err();
         assert!(matches!(err, Error::Invalid(_)));
     }
 
     #[test]
     fn rejects_bad_log_format() {
-        let err = Config::parse(None, Some("verbose"), None, None, None, None).unwrap_err();
+        let err = Config::parse(RawEnv {
+            log: Some("verbose"),
+            ..Default::default()
+        })
+        .unwrap_err();
         assert!(matches!(err, Error::Invalid(_)));
     }
 
     #[test]
     fn rejects_bad_timeout_and_body_limit() {
         assert!(matches!(
-            Config::parse(None, None, Some("soon"), None, None, None).unwrap_err(),
+            Config::parse(RawEnv {
+                timeout_secs: Some("soon"),
+                ..Default::default()
+            })
+            .unwrap_err(),
             Error::Invalid(_)
         ));
         assert!(matches!(
-            Config::parse(None, None, None, Some("huge"), None, None).unwrap_err(),
+            Config::parse(RawEnv {
+                body_limit: Some("huge"),
+                ..Default::default()
+            })
+            .unwrap_err(),
             Error::Invalid(_)
         ));
     }
