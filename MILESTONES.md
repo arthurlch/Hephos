@@ -271,7 +271,7 @@ and handles the two canonical simulations from `ARCHITECTURE.md §24` end-to-end
 - ✅ `/health` (liveness) and `/ready` (readiness incl. DB check) endpoints, canonical.
 - ✅ Panic isolation: a handler panic becomes a logged `500`, never a crash
   (`CatchPanicLayer`, innermost in the standard stack).
-- Rate limiting via `tower-governor` (GCRA), one canonical configuration surface.
+- ✅ Rate limiting via `tower-governor` (GCRA), one canonical configuration surface.
 - Load-shedding / concurrency-limit (Tower) with a documented backpressure story.
 - ✅ Canonical **data-retention reaper** pattern in `tasks/`: a scheduled job that purges
   dead rows (e.g. expired/revoked `refresh_tokens`, expired `api_keys`) on a grace

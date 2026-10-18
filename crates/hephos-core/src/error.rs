@@ -37,6 +37,9 @@ pub enum Error {
     #[error("payload too large")]
     PayloadTooLarge,
 
+    #[error("too many requests: {0}")]
+    RateLimited(String),
+
     #[error("service unavailable: {0}")]
     Unavailable(String),
 
@@ -77,6 +80,11 @@ impl Error {
         Error::Conflict(msg.into())
     }
 
+    /// A `429`: the client has exceeded its rate limit quota.
+    pub fn rate_limited(msg: impl Into<String>) -> Self {
+        Error::RateLimited(msg.into())
+    }
+
     /// A `503`: a downstream dependency is down or the service is temporarily unavailable.
     pub fn unavailable(msg: impl Into<String>) -> Self {
         Error::Unavailable(msg.into())
@@ -96,6 +104,7 @@ impl Error {
             Error::Forbidden => StatusCode::FORBIDDEN,
             Error::Conflict(_) => StatusCode::CONFLICT,
             Error::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
+            Error::RateLimited(_) => StatusCode::TOO_MANY_REQUESTS,
             Error::Unavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
             Error::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
@@ -109,6 +118,7 @@ impl Error {
             Error::Forbidden => "forbidden",
             Error::Conflict(_) => "conflict",
             Error::PayloadTooLarge => "payload_too_large",
+            Error::RateLimited(_) => "rate_limited",
             Error::Unavailable(_) => "unavailable",
             Error::Internal(_) => "internal",
         }
@@ -137,6 +147,7 @@ impl Error {
             Error::Forbidden => "forbidden".to_string(),
             Error::Conflict(msg) => msg.clone(),
             Error::PayloadTooLarge => "request body too large".to_string(),
+            Error::RateLimited(msg) => msg.clone(),
             Error::Unavailable(msg) => msg.clone(),
             Error::Internal(cause) => {
                 tracing::error!(error = ?cause, "internal error");
@@ -177,6 +188,10 @@ mod tests {
             StatusCode::PAYLOAD_TOO_LARGE
         );
         assert_eq!(
+            Error::rate_limited("quota").status(),
+            StatusCode::TOO_MANY_REQUESTS
+        );
+        assert_eq!(
             Error::unavailable("down").status(),
             StatusCode::SERVICE_UNAVAILABLE
         );
@@ -194,6 +209,7 @@ mod tests {
         assert_eq!(Error::Forbidden.kind(), "forbidden");
         assert_eq!(Error::conflict("c").kind(), "conflict");
         assert_eq!(Error::PayloadTooLarge.kind(), "payload_too_large");
+        assert_eq!(Error::rate_limited("q").kind(), "rate_limited");
         assert_eq!(Error::unavailable("d").kind(), "unavailable");
         assert_eq!(Error::internal("x").kind(), "internal");
     }

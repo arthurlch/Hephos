@@ -1,3 +1,4 @@
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -8,7 +9,7 @@ use tokio::net::TcpListener;
 use tokio::signal;
 use tokio_util::sync::CancellationToken;
 
-use crate::config::{Config, LogFormat};
+use crate::config::{Config, LogFormat, RateLimitConfig};
 use crate::ctx::Ctx;
 use crate::error::{Error, Result};
 use crate::router::Router;
@@ -69,6 +70,7 @@ pub struct App<S> {
     router: Router<S>,
     tasks: Vec<Box<dyn ErasedTask<S>>>,
     readiness: Option<ReadinessCheck>,
+    pub(crate) rate_limit: Option<RateLimitConfig>,
 }
 
 impl<S> App<S>
@@ -81,6 +83,7 @@ where
             router: Router::new(),
             tasks: Vec::new(),
             readiness: None,
+            rate_limit: None,
         }
     }
 
@@ -122,9 +125,17 @@ where
         self
     }
 
-    /// Assemble the full Axum router with auto-mounted probes (`/health`, `/ready`)
-    /// and application routes.
-    pub(crate) fn into_axum_router(self) -> axum::Router<S> {
+    /// Configure per-IP rate limiting (requests per second and burst capacity).
+    ///
+    /// Overrides environment variables (`HEPHOS_RATE_LIMIT_RPS`, `HEPHOS_RATE_LIMIT_BURST`).
+    /// Probes (`/health`, `/ready`) are never rate limited.
+    pub fn rate_limit(mut self, rps: u64, burst: u32) -> Self {
+        self.rate_limit = Some(RateLimitConfig::new(rps, burst));
+        self
+    }
+
+    /// Split into application router and auto-mounted probe router (`/health`, `/ready`).
+    pub(crate) fn into_routers(self) -> (axum::Router<S>, axum::Router<S>) {
         let readiness = self.readiness;
         let probe_router = axum::Router::new()
             .route("/health", axum::routing::get(health_handler))
@@ -133,7 +144,7 @@ where
                 axum::routing::get(move || ready_handler(readiness.clone())),
             );
 
-        self.router.into_inner().merge(probe_router)
+        (self.router.into_inner(), probe_router)
     }
 
     /// Read config, initialize observability, start tasks, and serve until a
@@ -143,11 +154,13 @@ where
         init_tracing(config.log);
 
         let shutdown = CancellationToken::new();
+        let rate_limit = self.rate_limit.or(config.rate_limit);
         let App {
             state,
             router,
             tasks,
             readiness,
+            rate_limit: _,
         } = self;
 
         // Background tasks share the app's shutdown token.
@@ -167,6 +180,7 @@ where
             body_limit: config.body_limit,
             hsts: config.hsts,
             cors_origins: config.cors_origins.clone(),
+            rate_limit,
         };
         let probe_router = axum::Router::new()
             .route("/health", axum::routing::get(health_handler))
@@ -174,15 +188,24 @@ where
                 "/ready",
                 axum::routing::get(move || ready_handler(readiness.clone())),
             );
-        let axum_router = router.into_inner().merge(probe_router);
-        let app = stack::apply(axum_router, stack_config, shutdown.clone()).with_state(state);
+        let app = stack::apply(
+            router.into_inner(),
+            probe_router,
+            stack_config,
+            shutdown.clone(),
+        )
+        .with_state(state);
 
         let listener = TcpListener::bind(config.addr)
             .await
             .map_err(|e| Error::internal(format!("bind {}: {e}", config.addr)))?;
         tracing::info!(addr = %config.addr, "hephos listening");
 
-        let serve = axum::serve(listener, app).with_graceful_shutdown({
+        let serve = axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .with_graceful_shutdown({
             let token = shutdown.clone();
             async move {
                 wait_for_signal().await;

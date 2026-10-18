@@ -8,6 +8,8 @@
 //! middleware ordering is a classic bug source, so it is decided once, here, and
 //! nowhere else.
 
+use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::Duration;
 
 use axum::extract::Request;
@@ -15,6 +17,10 @@ use axum::http::{HeaderValue, Method, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use tokio_util::sync::CancellationToken;
+use tower_governor::GovernorLayer;
+use tower_governor::errors::GovernorError;
+use tower_governor::governor::GovernorConfigBuilder;
+use tower_governor::key_extractor::SmartIpKeyExtractor;
 use tower_http::catch_panic::CatchPanicLayer;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::limit::RequestBodyLimitLayer;
@@ -22,6 +28,7 @@ use tower_http::timeout::TimeoutLayer;
 use tracing::Instrument;
 use uuid::Uuid;
 
+use crate::config::RateLimitConfig;
 use crate::ctx::RequestId;
 use crate::error::Error;
 use crate::identity::Identity;
@@ -34,6 +41,7 @@ pub(crate) struct StackConfig {
     pub body_limit: usize,
     pub hsts: bool,
     pub cors_origins: Option<Vec<String>>,
+    pub rate_limit: Option<RateLimitConfig>,
 }
 
 impl Default for StackConfig {
@@ -43,14 +51,20 @@ impl Default for StackConfig {
             body_limit: 2 * 1024 * 1024,
             hsts: false,
             cors_origins: None,
+            rate_limit: None,
         }
     }
 }
 
-/// Wrap `router` in the standard stack. `shutdown` is the process-wide token; each
-/// request gets a child of it, so a graceful shutdown cancels in-flight work.
+/// Wrap application and probe routes in the standard stack.
+///
+/// If rate limiting is configured, `app_router` is wrapped in [`GovernorLayer`]
+/// before being merged with `probe_router`, ensuring probes (`/health`, `/ready`)
+/// are never rate limited. `shutdown` is the process-wide token; each request gets
+/// a child of it, so a graceful shutdown cancels in-flight work.
 pub(crate) fn apply<S>(
-    router: axum::Router<S>,
+    app_router: axum::Router<S>,
+    probe_router: axum::Router<S>,
     config: StackConfig,
     shutdown: CancellationToken,
 ) -> axum::Router<S>
@@ -58,9 +72,41 @@ where
     S: Clone + Send + Sync + 'static,
 {
     let hsts = config.hsts;
+    let app_router = if let Some(rl) = config.rate_limit {
+        let mut builder = GovernorConfigBuilder::default()
+            .key_extractor(SmartIpKeyExtractor)
+            .use_headers();
+        builder
+            .period(Duration::from_nanos((1_000_000_000 / rl.rps).max(1)))
+            .burst_size(rl.burst);
+        let gov_conf = builder.finish().expect("valid rate limit config");
+        let limiter = Arc::downgrade(gov_conf.limiter());
+        let cancel = shutdown.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(60));
+            interval.tick().await;
+            loop {
+                tokio::select! {
+                    _ = cancel.cancelled() => break,
+                    _ = interval.tick() => {
+                        match limiter.upgrade() {
+                            Some(limiter) => limiter.retain_recent(),
+                            None => break,
+                        }
+                    }
+                }
+            }
+        });
+        let layer = GovernorLayer::new(gov_conf).error_handler(on_governor_error);
+        app_router.layer(layer)
+    } else {
+        app_router
+    };
+
     // `.layer()` applies outermost-last, so the call order below is innermost-first.
     // CORS is outermost so preflight (`OPTIONS`) is answered before auth/timeout.
-    let mut router = router
+    let mut router = app_router
+        .merge(probe_router)
         // Innermost: a handler panic is caught here and turned into a `500`, so the
         // worker task never unwinds and the server stays up. Placed inside `observe`,
         // so the 500 still gets the request id, security headers, and span log.
@@ -80,6 +126,49 @@ where
         router = router.layer(cors_layer(&origins));
     }
     router
+}
+
+fn on_governor_error(error: GovernorError) -> Response {
+    match error {
+        GovernorError::TooManyRequests { wait_time, headers } => {
+            let msg = format!("rate limit exceeded; try again in {wait_time}s");
+            let mut response = Error::rate_limited(msg).into_response();
+            if let Some(headers) = headers {
+                for (k, v) in headers {
+                    if let Some(k) = k {
+                        response.headers_mut().insert(k, v);
+                    }
+                }
+            }
+            response
+        }
+        GovernorError::UnableToExtractKey => {
+            tracing::error!("rate limiter: unable to extract client key");
+            Error::internal("unable to extract client ip for rate limiting").into_response()
+        }
+        GovernorError::Other { code, msg, headers } => {
+            let msg = msg.unwrap_or_else(|| "rate limit error".to_string());
+            tracing::warn!(status = %code, message = %msg, "rate limiter error");
+            let mut response = (
+                code,
+                axum::Json(serde_json::json!({
+                    "error": {
+                        "kind": "rate_limited",
+                        "message": msg,
+                    }
+                })),
+            )
+                .into_response();
+            if let Some(headers) = headers {
+                for (k, v) in headers {
+                    if let Some(k) = k {
+                        response.headers_mut().insert(k, v);
+                    }
+                }
+            }
+            response
+        }
+    }
 }
 
 /// An opinionated, minimal CORS layer: the standard methods and `content-type` /
@@ -109,6 +198,15 @@ async fn observe(mut req: Request, next: Next, hsts: bool) -> Response {
     let request_id = Uuid::new_v4();
     req.extensions_mut().insert(RequestId(request_id));
     req.extensions_mut().insert(Identity::Anonymous);
+    if req.extensions().get::<SocketAddr>().is_none()
+        && req
+            .extensions()
+            .get::<axum::extract::ConnectInfo<SocketAddr>>()
+            .is_none()
+    {
+        req.extensions_mut()
+            .insert(SocketAddr::from(([127, 0, 0, 1], 0)));
+    }
 
     let method = req.method().clone();
     let path = req.uri().path().to_owned();
@@ -185,7 +283,13 @@ mod tests {
             cors_origins,
             ..StackConfig::default()
         };
-        apply(router, config, CancellationToken::new()).with_state(())
+        apply(
+            router,
+            axum::Router::new(),
+            config,
+            CancellationToken::new(),
+        )
+        .with_state(())
     }
 
     #[tokio::test]
