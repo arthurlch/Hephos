@@ -20,6 +20,9 @@ use crate::error::{Error, Result};
 /// | `HEPHOS_CORS_ORIGINS`     | *(unset)*      | Comma-separated allowed origins, or `*`. Unset = no CORS. |
 /// | `HEPHOS_RATE_LIMIT_RPS`   | *(unset)*      | Quota replenishment in requests/sec per IP. Unset = disabled. |
 /// | `HEPHOS_RATE_LIMIT_BURST` | *(same as RPS)*| Maximum burst capacity per IP. |
+/// | `HEPHOS_CONCURRENCY_LIMIT`| *(unset)*      | Max concurrent in-flight requests before load shedding (503). |
+/// | `HEPHOS_OTLP_ENDPOINT`    | *(unset)*      | OTLP HTTP collector endpoint (e.g. `http://localhost:4318`). |
+/// | `HEPHOS_TRACES`           | `off`          | Export distributed traces via OTLP (beta upstream, gated). |
 // `#[non_exhaustive]`: the framework-config surface grows as new knobs are added, and a
 // struct literal in app code must not break. Construct via `Config::from_env`.
 #[derive(Debug, Clone)]
@@ -47,6 +50,10 @@ pub struct Config {
     /// Maximum concurrent in-flight requests before load shedding triggers. `None`
     /// disables concurrency limits and load shedding (the default).
     pub concurrency_limit: Option<usize>,
+    /// OpenTelemetry collector endpoint for OTLP export (`HEPHOS_OTLP_ENDPOINT`).
+    pub otlp_endpoint: Option<String>,
+    /// Whether OpenTelemetry trace export is enabled (`HEPHOS_TRACES`).
+    pub traces_enabled: bool,
 }
 
 /// Rate limiting configuration (`HEPHOS_RATE_LIMIT_RPS`, `HEPHOS_RATE_LIMIT_BURST`).
@@ -87,6 +94,8 @@ struct RawEnv<'a> {
     rate_limit_rps: Option<&'a str>,
     rate_limit_burst: Option<&'a str>,
     concurrency_limit: Option<&'a str>,
+    otlp_endpoint: Option<&'a str>,
+    traces: Option<&'a str>,
 }
 
 impl Config {
@@ -100,6 +109,12 @@ impl Config {
         let rate_limit_rps = std::env::var("HEPHOS_RATE_LIMIT_RPS").ok();
         let rate_limit_burst = std::env::var("HEPHOS_RATE_LIMIT_BURST").ok();
         let concurrency_limit = std::env::var("HEPHOS_CONCURRENCY_LIMIT").ok();
+        let otlp_endpoint = std::env::var("HEPHOS_OTLP_ENDPOINT")
+            .or_else(|_| std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT"))
+            .ok();
+        let traces = std::env::var("HEPHOS_TRACES")
+            .or_else(|_| std::env::var("HEPHOS_OTEL_TRACES"))
+            .ok();
 
         Self::parse(RawEnv {
             addr: addr.as_deref(),
@@ -111,6 +126,8 @@ impl Config {
             rate_limit_rps: rate_limit_rps.as_deref(),
             rate_limit_burst: rate_limit_burst.as_deref(),
             concurrency_limit: concurrency_limit.as_deref(),
+            otlp_endpoint: otlp_endpoint.as_deref(),
+            traces: traces.as_deref(),
         })
     }
 
@@ -224,6 +241,16 @@ impl Config {
             None => None,
         };
 
+        let otlp_endpoint = env.otlp_endpoint.and_then(|value| {
+            let trimmed = value.trim();
+            (!trimmed.is_empty()).then(|| trimmed.to_string())
+        });
+
+        let traces_enabled = matches!(
+            env.traces.map(str::to_ascii_lowercase).as_deref(),
+            Some("1" | "on" | "true" | "yes")
+        );
+
         Ok(Config {
             addr,
             log,
@@ -233,6 +260,8 @@ impl Config {
             cors_origins,
             rate_limit,
             concurrency_limit,
+            otlp_endpoint,
+            traces_enabled,
         })
     }
 }
@@ -260,6 +289,8 @@ mod tests {
         assert_eq!(config.cors_origins, None);
         assert_eq!(config.rate_limit, None);
         assert_eq!(config.concurrency_limit, None);
+        assert_eq!(config.otlp_endpoint, None);
+        assert!(!config.traces_enabled);
     }
 
     #[test]
@@ -274,6 +305,8 @@ mod tests {
             rate_limit_rps: Some("100"),
             rate_limit_burst: Some("250"),
             concurrency_limit: Some("64"),
+            otlp_endpoint: Some("http://localhost:4318"),
+            traces: Some("true"),
         })
         .unwrap();
         assert_eq!(config.addr.port(), 9000);
@@ -299,6 +332,11 @@ mod tests {
             })
         );
         assert_eq!(config.concurrency_limit, Some(64));
+        assert_eq!(
+            config.otlp_endpoint.as_deref(),
+            Some("http://localhost:4318")
+        );
+        assert!(config.traces_enabled);
     }
 
     #[test]

@@ -11,7 +11,19 @@ All notable changes to Hephos are recorded here. Format follows
   `CLAUDE.md` is now a symlink to `AGENTS.md`, so tools that auto-load either name get the
   doctrine with no duplicated source of truth. All references updated across the repo.
 
-### Added (0.2.0 — observability & operability, in progress)
+### Added (0.2.0 — observability & operability)
+- **OpenTelemetry & OTLP export in the standard stack**: integrated `opentelemetry`, `opentelemetry-otlp`,
+  `opentelemetry-appender-tracing`, and `tracing-opentelemetry`. Standard OTLP HTTP transport exports
+  logs and metrics by default when configured via `HEPHOS_OTLP_ENDPOINT` (or `OTEL_EXPORTER_OTLP_ENDPOINT`)
+  or programmatically via `App::otlp_endpoint`. Distributed tracing export is gated behind `HEPHOS_TRACES` /
+  `HEPHOS_OTEL_TRACES` or `App::traces` (default false while upstream tracing is beta). Telemetry handles
+  ensure all providers flush and shut down cleanly on graceful shutdown.
+- **Canonical RED metrics (Rate, Errors, Duration) with bounded label cardinality**:
+  automatic request measurement via `RedMetrics` (`http.server.requests`, `http.server.request.duration`,
+  `http.server.errors`). Labels are strictly constrained to `http.request.method`, `http.route`, and
+  `http.response.status_code`. Route labeling strictly uses the matched route template (`/users/{id}`)
+  rather than raw request paths, with unmatched requests mapped to `"__unmatched__"` to prevent cardinality
+  explosions in the metrics backend. Supported in `App` and `TestClient` with custom hook instrumentation.
 - **Canonical data-retention reaper pattern** (`examples/auth`): scheduled background task
   (`TokenReaper` in `tasks/reaper.rs`) that periodically purges dead security rows (expired or
   revoked `refresh_tokens` and `api_keys`) on a configurable grace window, keeping security tables

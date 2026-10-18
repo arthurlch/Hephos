@@ -19,6 +19,7 @@ mod identity;
 mod router;
 mod stack;
 mod task;
+pub mod telemetry;
 pub mod test;
 
 pub use app::{App, ProbeResponse};
@@ -30,6 +31,7 @@ pub use extract::{Json, Path, Query};
 pub use identity::{Identity, Principal};
 pub use router::Router;
 pub use task::Task;
+pub use telemetry::RedMetrics;
 
 /// Re-export so handlers can return a bare status (the canonical `204` shape:
 /// `Result<StatusCode>`) without importing `axum` directly.

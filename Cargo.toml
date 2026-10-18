@@ -49,6 +49,13 @@ uuid = { version = "1", features = ["v4", "serde"] }
 time = { version = "0.3", features = ["serde"] }
 futures = "0.3"
 
+# telemetry
+opentelemetry = { version = "0.33", features = ["metrics", "trace", "logs"] }
+opentelemetry_sdk = { version = "0.33", features = ["rt-tokio", "metrics", "trace", "logs"] }
+opentelemetry-otlp = { version = "0.33", default-features = false, features = ["http-proto", "reqwest-blocking-client", "metrics", "trace", "logs"] }
+tracing-opentelemetry = { version = "0.34", default-features = false, features = ["metrics"] }
+opentelemetry-appender-tracing = "0.33"
+
 # database
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "time", "macros", "migrate"] }
 

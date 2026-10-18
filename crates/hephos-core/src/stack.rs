@@ -3,10 +3,10 @@
 //! is what makes [`crate::Ctx`] honest: request id, tracing span, timeouts, body
 //! limits, a default identity, and a shutdown-linked cancellation token.
 //!
-//! Order (outermost → innermost): observe → timeout → body-limit → cancel →
-//! catch-panic → (per-route auth, if any) → handler. The order is fixed on purpose;
-//! middleware ordering is a classic bug source, so it is decided once, here, and
-//! nowhere else.
+//! Order (outermost → innermost): observe → red-metrics → timeout → body-limit →
+//! cancel → catch-panic → (per-route auth, if any) → handler. The order is fixed on
+//! purpose; middleware ordering is a classic bug source, so it is decided once, here,
+//! and nowhere else.
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -32,6 +32,7 @@ use crate::config::RateLimitConfig;
 use crate::ctx::RequestId;
 use crate::error::Error;
 use crate::identity::Identity;
+use crate::telemetry::RedMetrics;
 
 /// Knobs for the stack. Derived from [`crate::Config`] in production; defaulted in
 /// the test harness.
@@ -43,6 +44,7 @@ pub(crate) struct StackConfig {
     pub cors_origins: Option<Vec<String>>,
     pub rate_limit: Option<RateLimitConfig>,
     pub concurrency_limit: Option<usize>,
+    pub metrics: RedMetrics,
 }
 
 impl Default for StackConfig {
@@ -54,6 +56,7 @@ impl Default for StackConfig {
             cors_origins: None,
             rate_limit: None,
             concurrency_limit: None,
+            metrics: RedMetrics::new(),
         }
     }
 }
@@ -122,6 +125,7 @@ where
 
     // `.layer()` applies outermost-last, so the call order below is innermost-first.
     // CORS is outermost so preflight (`OPTIONS`) is answered before auth/timeout.
+    let metrics = config.metrics.clone();
     let mut router = app_router
         .merge(probe_router)
         // Innermost: a handler panic is caught here and turned into a `500`, so the
@@ -136,6 +140,9 @@ where
             StatusCode::REQUEST_TIMEOUT,
             config.timeout,
         ))
+        .layer(middleware::from_fn(move |req, next| {
+            crate::telemetry::red_metrics_middleware(metrics.clone(), req, next)
+        }))
         .layer(middleware::from_fn(move |req, next| {
             observe(req, next, hsts)
         }));

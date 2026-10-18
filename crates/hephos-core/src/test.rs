@@ -103,6 +103,18 @@ impl TestClient {
         Self::from_app(App::new(state).routes(router).concurrency_limit(limit))
     }
 
+    /// Build a client with explicit RED metrics instruments.
+    pub fn with_metrics<S>(
+        router: Router<S>,
+        state: S,
+        metrics: crate::telemetry::RedMetrics,
+    ) -> Self
+    where
+        S: Clone + Send + Sync + 'static,
+    {
+        Self::from_app(App::new(state).routes(router).metrics(metrics))
+    }
+
     fn build_from_app<S>(app: App<S>, mut config: StackConfig) -> Self
     where
         S: Clone + Send + Sync + 'static,
@@ -112,6 +124,9 @@ impl TestClient {
         }
         if let Some(limit) = app.concurrency_limit {
             config.concurrency_limit = Some(limit);
+        }
+        if let Some(metrics) = &app.metrics {
+            config.metrics = metrics.clone();
         }
         let state = app.state.clone();
         let shutdown = CancellationToken::new();
