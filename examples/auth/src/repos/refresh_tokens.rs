@@ -85,4 +85,16 @@ impl RefreshTokenRepo {
         .await?;
         Ok(())
     }
+
+    /// Purge refresh tokens that expired or were revoked before `cutoff`.
+    pub async fn purge_dead<'e, E: PgExecutor<'e>>(exec: E, cutoff: OffsetDateTime) -> Result<u64> {
+        let result = sqlx::query!(
+            "delete from refresh_tokens \
+             where expires_at < $1 or (revoked_at is not null and revoked_at < $1)",
+            cutoff
+        )
+        .execute(exec)
+        .await?;
+        Ok(result.rows_affected())
+    }
 }

@@ -8,7 +8,7 @@ use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
 use crate::domain::user::{
-    ApiKeyCreated, CreateApiKey, Credentials, RefreshRequest, TokenPair, User,
+    ApiKeyCreated, CreateApiKey, Credentials, ReapSummary, RefreshRequest, TokenPair, User,
 };
 use crate::repos::api_keys::ApiKeyRepo;
 use crate::repos::refresh_tokens::RefreshTokenRepo;
@@ -216,6 +216,22 @@ impl AuthService {
         Ok(TokenPair {
             access_token,
             refresh_token: raw,
+        })
+    }
+
+    /// Purge expired or revoked refresh tokens and API keys older than the `grace` window.
+    ///
+    /// The grace window keeps recently revoked/expired tokens visible for audit logs and
+    /// token-reuse detection before permanent deletion.
+    pub async fn reap_dead_tokens(&self, grace: Duration) -> Result<ReapSummary> {
+        let cutoff = OffsetDateTime::now_utc() - grace;
+        let mut tx = self.db.begin().await?;
+        let purged_refresh_tokens = RefreshTokenRepo::purge_dead(tx.exec(), cutoff).await?;
+        let purged_api_keys = ApiKeyRepo::purge_dead(tx.exec(), cutoff).await?;
+        tx.commit().await?;
+        Ok(ReapSummary {
+            purged_refresh_tokens,
+            purged_api_keys,
         })
     }
 }

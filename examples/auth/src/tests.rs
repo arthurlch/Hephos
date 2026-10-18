@@ -365,3 +365,53 @@ async fn owner_can_crud_note_but_others_get_403() {
         204
     );
 }
+
+#[tokio::test]
+#[ignore = "requires Postgres, migrations, and JWT_SECRET"]
+async fn reaper_purges_expired_and_revoked_tokens() {
+    let state = AppState::init().await.unwrap();
+    let client = TestClient::new(api::routes(state.auth.clone()), state.clone());
+    let creds = json!({ "email": "reaper_admin@example.com", "password": "correct horse battery" });
+
+    assert_eq!(
+        client.post_json("/auth/register", &creds).await.status(),
+        200
+    );
+    promote_to_admin("reaper_admin@example.com").await;
+
+    let login = client.post_json("/auth/login", &creds).await;
+    assert_eq!(login.status(), 200);
+    let (access, refresh) = tokens(&login.json::<Value>());
+
+    // Admin creates an API key.
+    let key_res = client
+        .post_json_with_token(
+            "/api-keys",
+            &access,
+            &json!({ "name": "reaper-key", "roles": ["read"] }),
+        )
+        .await;
+    assert_eq!(key_res.status(), 200);
+    let key_id = key_res.json::<Value>()["id"].as_str().unwrap().to_string();
+
+    // Revoke both: refresh token via logout, API key via DELETE.
+    let logout_res = client
+        .post_json("/auth/logout", &json!({ "refresh_token": refresh }))
+        .await;
+    assert_eq!(logout_res.status(), 204);
+
+    let revoke_key_res = client
+        .delete_with_token(&format!("/api-keys/{key_id}"), &access)
+        .await;
+    assert_eq!(revoke_key_res.status(), 204);
+
+    // Run reaper with zero grace period so recently-revoked tokens are purged.
+    let summary = state
+        .auth
+        .reap_dead_tokens(time::Duration::ZERO)
+        .await
+        .unwrap();
+
+    assert!(summary.purged_refresh_tokens >= 1);
+    assert!(summary.purged_api_keys >= 1);
+}

@@ -60,4 +60,17 @@ impl ApiKeyRepo {
         .await?;
         Ok(result.rows_affected() > 0)
     }
+
+    /// Purge API keys that expired or were revoked before `cutoff`.
+    pub async fn purge_dead<'e, E: PgExecutor<'e>>(exec: E, cutoff: OffsetDateTime) -> Result<u64> {
+        let result = sqlx::query!(
+            "delete from api_keys \
+             where (expires_at is not null and expires_at < $1) \
+                or (revoked_at is not null and revoked_at < $1)",
+            cutoff
+        )
+        .execute(exec)
+        .await?;
+        Ok(result.rows_affected())
+    }
 }

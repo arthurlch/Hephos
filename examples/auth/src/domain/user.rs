@@ -58,3 +58,10 @@ pub struct Claims {
     pub roles: Vec<String>,
     pub exp: u64,
 }
+
+/// Summary of dead security rows purged by the data-retention reaper.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct ReapSummary {
+    pub purged_refresh_tokens: u64,
+    pub purged_api_keys: u64,
+}
