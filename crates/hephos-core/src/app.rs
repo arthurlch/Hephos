@@ -71,6 +71,7 @@ pub struct App<S> {
     tasks: Vec<Box<dyn ErasedTask<S>>>,
     readiness: Option<ReadinessCheck>,
     pub(crate) rate_limit: Option<RateLimitConfig>,
+    pub(crate) concurrency_limit: Option<usize>,
 }
 
 impl<S> App<S>
@@ -84,6 +85,7 @@ where
             tasks: Vec::new(),
             readiness: None,
             rate_limit: None,
+            concurrency_limit: None,
         }
     }
 
@@ -134,6 +136,17 @@ where
         self
     }
 
+    /// Configure concurrency limit and load shedding (maximum in-flight requests).
+    ///
+    /// Excess requests are rejected immediately with `503 Service Unavailable`
+    /// (`"service overloaded, shedding load"`).
+    /// Overrides environment variable `HEPHOS_CONCURRENCY_LIMIT`.
+    /// Probes (`/health`, `/ready`) are never load-shed.
+    pub fn concurrency_limit(mut self, limit: usize) -> Self {
+        self.concurrency_limit = Some(limit);
+        self
+    }
+
     /// Split into application router and auto-mounted probe router (`/health`, `/ready`).
     pub(crate) fn into_routers(self) -> (axum::Router<S>, axum::Router<S>) {
         let readiness = self.readiness;
@@ -155,12 +168,14 @@ where
 
         let shutdown = CancellationToken::new();
         let rate_limit = self.rate_limit.or(config.rate_limit);
+        let concurrency_limit = self.concurrency_limit.or(config.concurrency_limit);
         let App {
             state,
             router,
             tasks,
             readiness,
             rate_limit: _,
+            concurrency_limit: _,
         } = self;
 
         // Background tasks share the app's shutdown token.
@@ -181,6 +196,7 @@ where
             hsts: config.hsts,
             cors_origins: config.cors_origins.clone(),
             rate_limit,
+            concurrency_limit,
         };
         let probe_router = axum::Router::new()
             .route("/health", axum::routing::get(health_handler))

@@ -42,6 +42,7 @@ pub(crate) struct StackConfig {
     pub hsts: bool,
     pub cors_origins: Option<Vec<String>>,
     pub rate_limit: Option<RateLimitConfig>,
+    pub concurrency_limit: Option<usize>,
 }
 
 impl Default for StackConfig {
@@ -52,16 +53,18 @@ impl Default for StackConfig {
             hsts: false,
             cors_origins: None,
             rate_limit: None,
+            concurrency_limit: None,
         }
     }
 }
 
 /// Wrap application and probe routes in the standard stack.
 ///
-/// If rate limiting is configured, `app_router` is wrapped in [`GovernorLayer`]
-/// before being merged with `probe_router`, ensuring probes (`/health`, `/ready`)
-/// are never rate limited. `shutdown` is the process-wide token; each request gets
-/// a child of it, so a graceful shutdown cancels in-flight work.
+/// If concurrency limiting or rate limiting is configured, `app_router` is wrapped
+/// in their respective layers before being merged with `probe_router`, ensuring probes
+/// (`/health`, `/ready`) are never rate limited or load-shed. `shutdown` is the
+/// process-wide token; each request gets a child of it, so a graceful shutdown cancels
+/// in-flight work.
 pub(crate) fn apply<S>(
     app_router: axum::Router<S>,
     probe_router: axum::Router<S>,
@@ -72,6 +75,20 @@ where
     S: Clone + Send + Sync + 'static,
 {
     let hsts = config.hsts;
+    let app_router = if let Some(limit) = config.concurrency_limit {
+        let layer = tower::ServiceBuilder::new()
+            .layer(axum::error_handling::HandleErrorLayer::new(
+                on_load_shed_error,
+            ))
+            .layer(tower::load_shed::LoadShedLayer::new())
+            .layer(tower::limit::concurrency::GlobalConcurrencyLimitLayer::new(
+                limit,
+            ));
+        app_router.layer(layer)
+    } else {
+        app_router
+    };
+
     let app_router = if let Some(rl) = config.rate_limit {
         let mut builder = GovernorConfigBuilder::default()
             .key_extractor(SmartIpKeyExtractor)
@@ -126,6 +143,14 @@ where
         router = router.layer(cors_layer(&origins));
     }
     router
+}
+
+async fn on_load_shed_error(error: tower::BoxError) -> Response {
+    if error.is::<tower::load_shed::error::Overloaded>() {
+        Error::unavailable("service overloaded, shedding load").into_response()
+    } else {
+        Error::internal("internal server error").into_response()
+    }
 }
 
 fn on_governor_error(error: GovernorError) -> Response {
@@ -347,5 +372,68 @@ mod tests {
                 .get("access-control-allow-origin")
                 .is_none()
         );
+    }
+
+    #[tokio::test]
+    async fn load_shed_rejects_when_concurrency_saturated() {
+        tokio::time::timeout(Duration::from_secs(3), async {
+            use std::sync::Arc;
+
+            let notify = Arc::new(tokio::sync::Notify::new());
+
+            let app_router = axum::Router::new().route(
+                "/slow",
+                axum::routing::get({
+                    let notify = notify.clone();
+                    move || {
+                        let notify = notify.clone();
+                        async move {
+                            notify.notified().await;
+                            "done"
+                        }
+                    }
+                }),
+            );
+
+            let config = StackConfig {
+                concurrency_limit: Some(1),
+                ..StackConfig::default()
+            };
+            let service = apply(
+                app_router,
+                axum::Router::new(),
+                config,
+                CancellationToken::new(),
+            )
+            .with_state(());
+
+            let client1 = service.clone();
+            let client2 = service.clone();
+
+            let handle1 = tokio::spawn(async move {
+                let req = HttpRequest::builder()
+                    .uri("/slow")
+                    .body(Body::empty())
+                    .unwrap();
+                client1.oneshot(req).await.unwrap()
+            });
+
+            // Yield to ensure task 1 acquires the 1 available concurrency permit
+            tokio::time::sleep(Duration::from_millis(50)).await;
+
+            let req2 = HttpRequest::builder()
+                .uri("/slow")
+                .body(Body::empty())
+                .unwrap();
+            let res2 = client2.oneshot(req2).await.unwrap();
+            assert_eq!(res2.status(), 503);
+
+            // Unblock request 1
+            notify.notify_waiters();
+            let res1 = handle1.await.unwrap();
+            assert_eq!(res1.status(), 200);
+        })
+        .await
+        .expect("test timed out!");
     }
 }

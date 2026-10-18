@@ -34,7 +34,7 @@ hephos-mcp = { path = "crates/hephos-mcp" }
 
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync", "time", "net"] }
 tokio-util = { version = "0.7", features = ["rt"] }
-tower = { version = "0.5", features = ["util"] }
+tower = { version = "0.5", features = ["util", "limit", "load-shed"] }
 tower-http = { version = "0.6", features = ["trace", "timeout", "limit", "cors", "catch-panic"] }
 axum = { version = "0.8", features = ["ws", "macros"] }
 tower_governor = { version = "0.8", default-features = false, features = ["axum", "tracing"] }

@@ -39,6 +39,7 @@ use crate::stack::{self, StackConfig};
 /// A client bound to an in-memory instance of the application router — wrapped in
 /// the same standard middleware stack `App` installs, so tests exercise the real
 /// request lifecycle (request id, timeout, body limit, identity seed, cancellation).
+#[derive(Clone)]
 pub struct TestClient {
     service: axum::Router,
 }
@@ -94,12 +95,23 @@ impl TestClient {
         Self::from_app(App::new(state).routes(router).rate_limit(rps, burst))
     }
 
+    /// Build a client with explicit concurrency limiting and load shedding.
+    pub fn with_concurrency_limit<S>(router: Router<S>, state: S, limit: usize) -> Self
+    where
+        S: Clone + Send + Sync + 'static,
+    {
+        Self::from_app(App::new(state).routes(router).concurrency_limit(limit))
+    }
+
     fn build_from_app<S>(app: App<S>, mut config: StackConfig) -> Self
     where
         S: Clone + Send + Sync + 'static,
     {
         if let Some(rl) = app.rate_limit {
             config.rate_limit = Some(rl);
+        }
+        if let Some(limit) = app.concurrency_limit {
+            config.concurrency_limit = Some(limit);
         }
         let state = app.state.clone();
         let shutdown = CancellationToken::new();
@@ -258,6 +270,15 @@ impl TestResponse {
             .get("error")
             .and_then(|error| error.get("kind"))
             .and_then(|kind| kind.as_str())
+            .map(str::to_owned)
+    }
+
+    /// The `error.message` from a Hephos error body.
+    pub fn error_message(&self) -> Option<String> {
+        self.json::<serde_json::Value>()
+            .get("error")
+            .and_then(|error| error.get("message"))
+            .and_then(|msg| msg.as_str())
             .map(str::to_owned)
     }
 }
