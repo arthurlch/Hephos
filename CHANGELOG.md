@@ -12,6 +12,10 @@ All notable changes to Hephos are recorded here. Format follows
   doctrine with no duplicated source of truth. All references updated across the repo.
 
 ### Added (0.2.0 — observability & operability, in progress)
+- **Canonical data-retention reaper pattern** (`examples/auth`): scheduled background task
+  (`TokenReaper` in `tasks/reaper.rs`) that periodically purges dead security rows (expired or
+  revoked `refresh_tokens` and `api_keys`) on a configurable grace window, keeping security tables
+  bounded in production.
 - **Canonical `/health` and `/ready` probes** (`0.2.0`): `/health` (liveness) is
   auto-mounted by `App` and returns `200` (`{"status":"ok"}`); `/ready` (readiness)
   defaults to `200` (`{"status":"ready"}`) and supports custom async checks via
