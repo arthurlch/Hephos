@@ -4,8 +4,13 @@
 
 [advisories]
 version = 2
-# No ignores. A real advisory should fail review, not be silenced here without cause.
-ignore = []
+# Documented ignores with justification:
+# - RUSTSEC-2026-0009: Denial of Service via Stack Exhaustion in time formatting.
+#   Fix requires rustc >= 1.88, which exceeds the repository's 1.85 MSRV.
+#   Hephos never parses or formats attacker-controlled format descriptions.
+ignore = [
+    "RUSTSEC-2026-0009",
+]
 
 [licenses]
 version = 2

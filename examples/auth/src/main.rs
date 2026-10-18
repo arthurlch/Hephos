@@ -24,7 +24,10 @@ async fn main() -> Result<()> {
             async move { db.ping().await }
         })
         .routes(api::routes(auth))
-        .task(TokenReaper::default())
+        .task(TokenReaper::new(
+            std::time::Duration::from_secs(3600),
+            time::Duration::days(7),
+        ))
         .run()
         .await
 }

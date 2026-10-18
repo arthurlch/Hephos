@@ -21,6 +21,7 @@ impl Default for TokenReaper {
 }
 
 impl TokenReaper {
+    #[allow(dead_code)] // Permitted constructor for tests and custom retention windows
     pub fn new(interval: std::time::Duration, grace: time::Duration) -> Self {
         Self { interval, grace }
     }
