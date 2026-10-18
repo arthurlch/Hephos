@@ -398,7 +398,7 @@ async fn reaper_purges_expired_and_revoked_tokens() {
     let logout_res = client
         .post_json("/auth/logout", &json!({ "refresh_token": refresh }))
         .await;
-    assert_eq!(logout_res.status(), 200);
+    assert_eq!(logout_res.status(), 204);
 
     let revoke_key_res = client
         .delete_with_token(&format!("/api-keys/{key_id}"), &access)
