@@ -364,3 +364,116 @@ async fn ready_handler(readiness: Option<ReadinessCheck>) -> axum::response::Res
         (StatusCode::OK, axum::Json(ProbeResponse::ready())).into_response()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::to_bytes;
+    use serde_json::Value;
+
+    #[test]
+    fn probe_response_serialization_and_values() {
+        let ok = ProbeResponse::ok();
+        assert_eq!(ok.status, "ok");
+        let json_ok = serde_json::to_string(&ok).unwrap();
+        let parsed_ok: ProbeResponse = serde_json::from_str(&json_ok).unwrap();
+        assert_eq!(parsed_ok, ok);
+
+        let ready = ProbeResponse::ready();
+        assert_eq!(ready.status, "ready");
+        let json_ready = serde_json::to_string(&ready).unwrap();
+        let parsed_ready: ProbeResponse = serde_json::from_str(&json_ready).unwrap();
+        assert_eq!(parsed_ready, ready);
+    }
+
+    #[tokio::test]
+    async fn health_handler_returns_ok() {
+        let (status, axum::Json(body)) = health_handler().await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body.status, "ok");
+    }
+
+    #[tokio::test]
+    async fn ready_handler_defaults_to_ready_when_no_check() {
+        let res = ready_handler(None).await;
+        assert_eq!(res.status(), StatusCode::OK);
+        let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let json: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["status"], "ready");
+    }
+
+    #[tokio::test]
+    async fn ready_handler_succeeds_when_check_passes() {
+        let check: ReadinessCheck = Arc::new(|| Box::pin(async { Ok(()) }));
+        let res = ready_handler(Some(check)).await;
+        assert_eq!(res.status(), StatusCode::OK);
+        let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let json: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["status"], "ready");
+    }
+
+    #[tokio::test]
+    async fn ready_handler_surfaces_unavailable_error() {
+        let check: ReadinessCheck =
+            Arc::new(|| Box::pin(async { Err(Error::unavailable("database offline")) }));
+        let res = ready_handler(Some(check)).await;
+        assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
+        let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let json: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["error"]["kind"], "unavailable");
+        assert_eq!(json["error"]["message"], "database offline");
+    }
+
+    #[tokio::test]
+    async fn ready_handler_masks_unexpected_internal_error() {
+        let check: ReadinessCheck = Arc::new(|| {
+            Box::pin(async { Err(Error::internal("leaked connection error with password")) })
+        });
+        let res = ready_handler(Some(check)).await;
+        assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
+        let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let json: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["error"]["kind"], "unavailable");
+        // Must never leak the internal error cause
+        assert_eq!(json["error"]["message"], "service unavailable");
+    }
+
+    #[test]
+    fn app_builder_configures_options() {
+        let app = App::new("test_state".to_string())
+            .rate_limit(50, 100)
+            .concurrency_limit(32)
+            .otlp_endpoint("http://otel.local:4318")
+            .traces(true);
+
+        assert_eq!(app.state, "test_state");
+        assert_eq!(
+            app.rate_limit,
+            Some(crate::config::RateLimitConfig::new(50, 100))
+        );
+        assert_eq!(app.concurrency_limit, Some(32));
+        assert_eq!(app.otlp_endpoint.as_deref(), Some("http://otel.local:4318"));
+        assert_eq!(app.traces_enabled, Some(true));
+    }
+
+    struct DummyTask;
+
+    impl Task<()> for DummyTask {
+        fn name(&self) -> &'static str {
+            "dummy_task"
+        }
+
+        async fn run(&self, _ctx: Ctx<()>) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn erased_task_dispatch() {
+        let boxed: Box<dyn ErasedTask<()>> = Box::new(DummyTask);
+        assert_eq!(boxed.name(), "dummy_task");
+        let ctx = Ctx::detached(());
+        let res = boxed.run_erased(ctx).await;
+        assert!(res.is_ok());
+    }
+}

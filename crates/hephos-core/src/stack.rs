@@ -282,7 +282,7 @@ async fn cancel(mut req: Request, next: Next, shutdown: CancellationToken) -> Re
 /// leaks to the client. Reusing `Error` keeps the error-body shape identical to every
 /// other `500`.
 fn on_panic(payload: Box<dyn std::any::Any + Send + 'static>) -> Response {
-    let detail = panic_message(&payload);
+    let detail = panic_message(payload.as_ref());
     Error::internal(format!("handler panicked: {detail}")).into_response()
 }
 
@@ -442,5 +442,95 @@ mod tests {
         })
         .await
         .expect("test timed out!");
+    }
+
+    #[test]
+    fn panic_message_formats_cleanly() {
+        // 1. &'static str
+        let payload_str: Box<dyn std::any::Any + Send> = Box::new("static panic reason");
+        assert_eq!(panic_message(payload_str.as_ref()), "static panic reason");
+
+        // 2. String
+        let payload_string: Box<dyn std::any::Any + Send> =
+            Box::new("dynamic secret string".to_string());
+        assert_eq!(
+            panic_message(payload_string.as_ref()),
+            "dynamic secret string"
+        );
+
+        // 3. other arbitrary payload
+        let payload_other: Box<dyn std::any::Any + Send> = Box::new(12345i32);
+        assert_eq!(panic_message(payload_other.as_ref()), "unknown panic");
+    }
+
+    #[tokio::test]
+    async fn on_load_shed_error_maps_correctly() {
+        use axum::body::to_bytes;
+        use serde_json::Value;
+
+        // Overloaded error -> 503
+        let overloaded_err: tower::BoxError = Box::new(tower::load_shed::error::Overloaded::new());
+        let res_overloaded = on_load_shed_error(overloaded_err).await;
+        assert_eq!(res_overloaded.status(), StatusCode::SERVICE_UNAVAILABLE);
+        let bytes = to_bytes(res_overloaded.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["error"]["kind"], "unavailable");
+        assert_eq!(
+            json["error"]["message"],
+            "service overloaded, shedding load"
+        );
+
+        // Generic error -> 500 (internal error message is always masked)
+        let generic_err: tower::BoxError = "something unexpected".into();
+        let res_generic = on_load_shed_error(generic_err).await;
+        assert_eq!(res_generic.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let bytes_gen = to_bytes(res_generic.into_body(), usize::MAX).await.unwrap();
+        let json_gen: Value = serde_json::from_slice(&bytes_gen).unwrap();
+        assert_eq!(json_gen["error"]["kind"], "internal");
+        assert_eq!(json_gen["error"]["message"], "internal error");
+    }
+
+    #[tokio::test]
+    async fn on_governor_error_maps_correctly() {
+        use axum::body::to_bytes;
+        use serde_json::Value;
+
+        // 1. TooManyRequests
+        let gov_err = GovernorError::TooManyRequests {
+            wait_time: 5,
+            headers: None,
+        };
+        let res = on_governor_error(gov_err);
+        assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
+        let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let json: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["error"]["kind"], "rate_limited");
+        assert_eq!(
+            json["error"]["message"],
+            "rate limit exceeded; try again in 5s"
+        );
+
+        // 2. UnableToExtractKey
+        let gov_err_key = GovernorError::UnableToExtractKey;
+        let res_key = on_governor_error(gov_err_key);
+        assert_eq!(res_key.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let bytes_key = to_bytes(res_key.into_body(), usize::MAX).await.unwrap();
+        let json_key: Value = serde_json::from_slice(&bytes_key).unwrap();
+        assert_eq!(json_key["error"]["kind"], "internal");
+
+        // 3. Other
+        let gov_err_other = GovernorError::Other {
+            code: StatusCode::BAD_GATEWAY,
+            msg: Some("custom gateway error".into()),
+            headers: None,
+        };
+        let res_other = on_governor_error(gov_err_other);
+        assert_eq!(res_other.status(), StatusCode::BAD_GATEWAY);
+        let bytes_other = to_bytes(res_other.into_body(), usize::MAX).await.unwrap();
+        let json_other: Value = serde_json::from_slice(&bytes_other).unwrap();
+        assert_eq!(json_other["error"]["kind"], "rate_limited");
+        assert_eq!(json_other["error"]["message"], "custom gateway error");
     }
 }

@@ -221,3 +221,130 @@ fn tool_result_message(result: &ToolResult) -> Message {
         content: serde_json::to_string(&result.output).unwrap_or_default(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn limits_defaults_and_custom() {
+        let default_limits = Limits::default();
+        assert_eq!(default_limits.max_turns, 8);
+        assert_eq!(default_limits.max_tokens, 4096);
+        assert_eq!(default_limits.timeout, Duration::from_secs(60));
+
+        let custom = Limits {
+            max_turns: 5,
+            max_tokens: 2048,
+            timeout: Duration::from_secs(30),
+        };
+        assert_eq!(custom.max_turns, 5);
+        assert_eq!(custom.max_tokens, 2048);
+        assert_eq!(custom.timeout, Duration::from_secs(30));
+    }
+
+    #[test]
+    fn tool_result_message_constructs_tool_role() {
+        let res = ToolResult {
+            name: "calculator".into(),
+            output: serde_json::json!({ "result": 42 }),
+        };
+        let msg = tool_result_message(&res);
+        assert_eq!(msg.role, crate::message::Role::Tool);
+        assert_eq!(msg.content, r#"{"result":42}"#);
+    }
+
+    #[derive(serde::Deserialize, schemars::JsonSchema)]
+    struct AddInput {
+        a: i32,
+        b: i32,
+    }
+
+    struct AddTool;
+
+    impl Tool for AddTool {
+        type Input = AddInput;
+        type Output = i32;
+        const NAME: &'static str = "add";
+        const DESCRIPTION: &'static str = "adds two numbers";
+
+        async fn call(&self, input: AddInput) -> Result<i32> {
+            Ok(input.a + input.b)
+        }
+    }
+
+    #[tokio::test]
+    async fn registered_tool_invocation_and_error_handling() {
+        let reg = RegisteredTool::new(AddTool);
+        assert_eq!(reg.schema.name, "add");
+        assert_eq!(reg.schema.description, "adds two numbers");
+
+        // 1. Valid input
+        let res = (reg.invoke)(serde_json::json!({ "a": 10, "b": 25 }))
+            .await
+            .unwrap();
+        assert_eq!(res.name, "add");
+        assert_eq!(res.output, serde_json::json!(35));
+
+        // 2. Invalid input (missing field)
+        let err_missing = (reg.invoke)(serde_json::json!({ "a": 10 }))
+            .await
+            .unwrap_err();
+        assert!(matches!(err_missing, Error::Invalid(_)));
+
+        // 3. Invalid input (wrong type)
+        let err_type = (reg.invoke)(serde_json::json!({ "a": "ten", "b": 25 }))
+            .await
+            .unwrap_err();
+        assert!(matches!(err_type, Error::Invalid(_)));
+    }
+
+    struct EchoModel;
+
+    impl Model for EchoModel {
+        async fn complete(&self, _request: Completion) -> Result<Message> {
+            Ok(Message::assistant("echo response"))
+        }
+
+        async fn stream(&self, _request: Completion) -> Result<TextStream> {
+            Ok(Box::pin(futures::stream::empty()))
+        }
+    }
+
+    #[tokio::test]
+    async fn agent_unknown_tool_dispatch_fails() {
+        let agent = Agent::new(EchoModel).tool(AddTool);
+        let unknown_call = ToolCall {
+            name: "sub".into(),
+            input: serde_json::json!({ "a": 5, "b": 2 }),
+        };
+        let err = agent.dispatch(unknown_call).await.unwrap_err();
+        assert!(matches!(err, Error::Invalid(_)));
+    }
+
+    struct SlowModel;
+
+    impl Model for SlowModel {
+        async fn complete(&self, _request: Completion) -> Result<Message> {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            Ok(Message::assistant("done"))
+        }
+
+        async fn stream(&self, _request: Completion) -> Result<TextStream> {
+            Ok(Box::pin(futures::stream::empty()))
+        }
+    }
+
+    #[tokio::test]
+    async fn agent_timeout_enforcement() {
+        let agent = Agent::new(SlowModel).limits(Limits {
+            max_turns: 3,
+            max_tokens: 100,
+            timeout: Duration::from_millis(10),
+        });
+
+        let err = agent.run("hello").await.unwrap_err();
+        assert!(matches!(err, Error::Internal(_)));
+        assert!(err.to_string().contains("exceeded its time limit"));
+    }
+}

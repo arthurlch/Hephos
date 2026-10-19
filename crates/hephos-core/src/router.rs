@@ -126,12 +126,7 @@ where
             move |mut request: axum::extract::Request, next: axum::middleware::Next| {
                 let verify = verify.clone();
                 async move {
-                    let token = request
-                        .headers()
-                        .get(AUTHORIZATION)
-                        .and_then(|value| value.to_str().ok())
-                        .and_then(bearer_token)
-                        .map(str::to_owned);
+                    let token = extract_credential(&request);
 
                     match token {
                         Some(token) => match verify(token).await {
@@ -188,6 +183,59 @@ where
 /// pathologically large input.
 const MAX_TOKEN_LEN: usize = 4096;
 
+/// Extract authentication credential from either the `Authorization: Bearer <token>`
+/// header or query parameters (`?token=<token>` / `?access_token=<token>`).
+///
+/// Query parameter extraction provides auth-on-upgrade support for WebSocket handshakes
+/// and Server-Sent Events where browser JavaScript cannot attach custom headers.
+fn extract_credential(request: &axum::extract::Request) -> Option<String> {
+    if let Some(token) = request
+        .headers()
+        .get(AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(bearer_token)
+    {
+        return Some(token.to_string());
+    }
+
+    if let Some(query) = request.uri().query() {
+        for pair in query.split('&') {
+            if let Some((k, v)) = pair.split_once('=') {
+                if (k == "token" || k == "access_token")
+                    && !v.is_empty()
+                    && v.len() <= MAX_TOKEN_LEN
+                {
+                    return percent_decode(v);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// Simple, allocation-friendly percent-decoding for query parameter credentials.
+fn percent_decode(input: &str) -> Option<String> {
+    if !input.contains('%') {
+        return Some(input.to_string());
+    }
+    let mut bytes = Vec::with_capacity(input.len());
+    let mut chars = input.bytes();
+    while let Some(b) = chars.next() {
+        if b == b'%' {
+            let h1 = chars.next()?;
+            let h2 = chars.next()?;
+            let hex = [h1, h2];
+            let hex_str = std::str::from_utf8(&hex).ok()?;
+            let byte = u8::from_str_radix(hex_str, 16).ok()?;
+            bytes.push(byte);
+        } else {
+            bytes.push(b);
+        }
+    }
+    String::from_utf8(bytes).ok()
+}
+
 /// Extract the credential from an `Authorization` header value, accepting the
 /// `Bearer` scheme case-insensitively (RFC 7235 schemes are case-insensitive).
 /// Returns `None` for a missing/empty credential, a different scheme, or a credential
@@ -232,11 +280,106 @@ mod tests {
     }
 
     #[test]
-    fn builds_routes_without_panic() {
+    fn extracts_credential_from_header_and_query() {
+        use axum::http::Request;
+
+        // 1. Authorization header
+        let req_header = Request::builder()
+            .header(AUTHORIZATION, "Bearer my-secret-token")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        assert_eq!(
+            extract_credential(&req_header),
+            Some("my-secret-token".to_string())
+        );
+
+        // 2. Query parameter: token
+        let req_query_token = Request::builder()
+            .uri("/ws?token=ws-token-123")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        assert_eq!(
+            extract_credential(&req_query_token),
+            Some("ws-token-123".to_string())
+        );
+
+        // 3. Query parameter: access_token with percent-encoded characters
+        let req_query_access = Request::builder()
+            .uri("/events?access_token=jwt%2Babc%20123")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        assert_eq!(
+            extract_credential(&req_query_access),
+            Some("jwt+abc 123".to_string())
+        );
+
+        // 4. Missing or unrelated query params
+        let req_unrelated = Request::builder()
+            .uri("/ws?foo=bar")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        assert_eq!(extract_credential(&req_unrelated), None);
+    }
+
+    #[test]
+    fn percent_decode_cases() {
+        assert_eq!(percent_decode("simple"), Some("simple".to_string()));
+        assert_eq!(percent_decode("a%20b"), Some("a b".to_string()));
+        assert_eq!(percent_decode("a%2Bb%3Dc"), Some("a+b=c".to_string()));
+        assert_eq!(percent_decode("invalid%"), None);
+        assert_eq!(percent_decode("invalid%2"), None);
+        assert_eq!(percent_decode("invalid%ZZ"), None);
+    }
+
+    #[test]
+    fn extract_credential_edge_cases() {
+        use axum::http::Request;
+
+        // Empty token in query
+        let req_empty = Request::builder()
+            .uri("/ws?token=")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        assert_eq!(extract_credential(&req_empty), None);
+
+        // Multiple query parameters
+        let req_multi = Request::builder()
+            .uri("/ws?theme=dark&token=my-token&page=1")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        assert_eq!(extract_credential(&req_multi), Some("my-token".to_string()));
+
+        // Oversized query token
+        let oversized = "x".repeat(MAX_TOKEN_LEN + 1);
+        let req_oversized = Request::builder()
+            .uri(format!("/ws?token={oversized}"))
+            .body(axum::body::Body::empty())
+            .unwrap();
+        assert_eq!(extract_credential(&req_oversized), None);
+
+        // Corrupted percent encoding in query token
+        let req_bad_pct = Request::builder()
+            .uri("/ws?token=bad%XXtoken")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        assert_eq!(extract_credential(&req_bad_pct), None);
+    }
+
+    #[test]
+    fn builds_routes_all_methods() {
         let _ = Router::<()>::new()
             .get("/a", ok)
             .post("/b", ok)
-            .merge(Router::<()>::new().get("/c", ok));
+            .put("/c", ok)
+            .patch("/d", ok)
+            .delete("/e", ok)
+            .merge(Router::<()>::new().get("/sub", ok));
+    }
+
+    #[test]
+    #[should_panic(expected = "merge")]
+    fn nesting_empty_prefix_panics_with_guidance() {
+        let _ = Router::<()>::new().nest("", Router::<()>::new());
     }
 
     #[test]

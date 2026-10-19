@@ -46,5 +46,41 @@ mod tests {
         };
         assert!(p.has_role("admin"));
         assert!(!p.has_role("owner"));
+        // Empty role does not match
+        assert!(!p.has_role(""));
+        // Case-sensitive match
+        assert!(!p.has_role("Admin"));
+    }
+
+    #[test]
+    fn principal_with_empty_roles() {
+        let p = Principal {
+            id: Uuid::new_v4(),
+            roles: vec![],
+        };
+        assert!(!p.has_role("admin"));
+        assert!(!p.has_role("user"));
+    }
+
+    #[test]
+    fn identity_cloning_and_debug_format() {
+        let id = Uuid::new_v4();
+        let user_id = Identity::User(Principal {
+            id,
+            roles: vec!["operator".into()],
+        });
+        let cloned = user_id.clone();
+        if let Identity::User(principal) = cloned {
+            assert_eq!(principal.id, id);
+            assert!(principal.has_role("operator"));
+        } else {
+            panic!("expected Identity::User");
+        }
+
+        let debug_str = format!("{:?}", user_id);
+        assert!(debug_str.contains("operator"));
+
+        let anon = Identity::Anonymous;
+        assert_eq!(format!("{:?}", anon), "Anonymous");
     }
 }

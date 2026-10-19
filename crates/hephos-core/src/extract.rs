@@ -13,6 +13,7 @@ use crate::error::Error;
 /// On deserialization failure it produces [`Error::Invalid`] with a message, so
 /// bad input is a clean `400` that flows through the one error type — never an
 /// axum-shaped rejection an agent has to learn separately.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Json<T>(pub T);
 
 impl<T, S> FromRequest<S> for Json<T>
@@ -40,6 +41,7 @@ impl<T: Serialize> IntoResponse for Json<T> {
 }
 
 /// Typed path parameters, e.g. `Path(id): Path<Uuid>`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Path<T>(pub T);
 
 impl<T, S> FromRequestParts<S> for Path<T>
@@ -58,6 +60,7 @@ where
 }
 
 /// Typed query string, e.g. `Query(filter): Query<ListFilter>`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Query<T>(pub T);
 
 impl<T, S> FromRequestParts<S> for Query<T>
@@ -99,4 +102,111 @@ fn map_path(rejection: PathRejection) -> Error {
 fn map_query(rejection: QueryRejection) -> Error {
     tracing::debug!(detail = %rejection.body_text(), "rejected query string");
     Error::invalid("invalid query string")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::extract::FromRequest;
+    use axum::http::Request;
+    use serde::Deserialize;
+
+    #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+    struct UserPayload {
+        name: String,
+        age: u32,
+    }
+
+    #[tokio::test]
+    async fn json_extractor_valid_body() {
+        let req = Request::builder()
+            .method("POST")
+            .header("content-type", "application/json")
+            .body(axum::body::Body::from(r#"{"name":"Alice","age":30}"#))
+            .unwrap();
+        let extracted = Json::<UserPayload>::from_request(req, &()).await.unwrap();
+        assert_eq!(
+            extracted.0,
+            UserPayload {
+                name: "Alice".into(),
+                age: 30
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn json_extractor_invalid_syntax_maps_to_safe_opaque_error() {
+        let req = Request::builder()
+            .method("POST")
+            .header("content-type", "application/json")
+            .body(axum::body::Body::from(r#"{"name": broken"#))
+            .unwrap();
+        let err = Json::<UserPayload>::from_request(req, &())
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            Error::invalid("request body is not valid JSON for this endpoint").to_string()
+        );
+    }
+
+    #[tokio::test]
+    async fn json_extractor_wrong_schema_maps_to_safe_opaque_error() {
+        let req = Request::builder()
+            .method("POST")
+            .header("content-type", "application/json")
+            .body(axum::body::Body::from(
+                r#"{"name":"Alice","age":"not-a-number"}"#,
+            ))
+            .unwrap();
+        let err = Json::<UserPayload>::from_request(req, &())
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            Error::invalid("request body is not valid JSON for this endpoint").to_string()
+        );
+    }
+
+    #[derive(Debug, PartialEq, Eq, Deserialize)]
+    struct QueryParams {
+        search: String,
+        limit: u32,
+    }
+
+    #[tokio::test]
+    async fn query_extractor_valid_and_invalid() {
+        use axum::extract::FromRequestParts;
+
+        // Valid query
+        let req = Request::builder()
+            .uri("/items?search=rust&limit=10")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        let (mut parts, _) = req.into_parts();
+        let query = Query::<QueryParams>::from_request_parts(&mut parts, &())
+            .await
+            .unwrap();
+        assert_eq!(
+            query.0,
+            QueryParams {
+                search: "rust".into(),
+                limit: 10
+            }
+        );
+
+        // Invalid query parameter (wrong type)
+        let req_invalid = Request::builder()
+            .uri("/items?search=rust&limit=abc")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        let (mut parts_inv, _) = req_invalid.into_parts();
+        let err = Query::<QueryParams>::from_request_parts(&mut parts_inv, &())
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            Error::invalid("invalid query string").to_string()
+        );
+    }
 }

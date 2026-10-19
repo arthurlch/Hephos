@@ -42,10 +42,7 @@ pub use tokio_util::sync::CancellationToken;
 
 /// The blessed WebSocket primitives. Handlers use these; there is no other
 /// WebSocket surface.
-pub mod ws {
-    pub use axum::extract::ws::{Message, Utf8Bytes, WebSocket, WebSocketUpgrade};
-    pub use axum::response::Response;
-}
+pub mod ws;
 
 /// The blessed server-sent-events / streaming primitives.
 pub mod sse {
@@ -57,7 +54,7 @@ pub mod sse {
 /// `CONVENTIONS.md §2.13`. The canonical `Json`/`Path`/`Query` surface stays in the
 /// prelude; these are the deliberate 20%.
 pub mod http {
-    pub use axum::body::Bytes;
-    pub use axum::http::{HeaderMap, HeaderName, HeaderValue};
+    pub use axum::body::{Body, Bytes};
+    pub use axum::http::{HeaderMap, HeaderName, HeaderValue, Request};
     pub use axum::response::{IntoResponse, Response};
 }
