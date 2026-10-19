@@ -173,3 +173,28 @@ fn test_scan_routes_invalid_dir() {
     let msg = err.unwrap_err().to_string();
     assert!(msg.contains("no 'src/api.rs' or 'src/api' directory found"));
 }
+
+#[test]
+fn test_openapi_generation_from_real_example() {
+    use hephos_cli::routes::generate_openapi;
+
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let repo_root = manifest_dir
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    let rest_dir = repo_root.join("examples").join("rest");
+
+    let routes = scan_routes(&rest_dir).expect("scan_routes succeeds on example-rest");
+    let openapi = generate_openapi(&routes, "Products API", "1.0.0");
+
+    assert_eq!(openapi["openapi"], "3.1.0");
+    assert_eq!(openapi["info"]["title"], "Products API");
+    assert_eq!(openapi["info"]["version"], "1.0.0");
+    assert!(openapi["paths"]["/products"]["get"].is_object());
+    assert!(openapi["paths"]["/products/search"]["post"].is_object());
+    assert!(openapi["paths"]["/health"]["get"].is_object());
+    assert!(openapi["paths"]["/ready"]["get"].is_object());
+}

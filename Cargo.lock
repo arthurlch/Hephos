@@ -633,9 +633,11 @@ dependencies = [
 name = "example-mcp"
 version = "0.1.0"
 dependencies = [
+ "futures",
  "hephos",
  "schemars 0.8.22",
  "serde",
+ "serde_json",
  "tokio",
  "uuid",
 ]
@@ -1062,7 +1064,6 @@ dependencies = [
 name = "hephos-mcp"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "hephos-agent",
  "hephos-core",
  "rmcp",

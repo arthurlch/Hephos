@@ -219,3 +219,84 @@ pub fn format_table(routes: &[DiscoveredRoute]) -> String {
 pub fn format_json(routes: &[DiscoveredRoute]) -> Result<String> {
     serde_json::to_string_pretty(routes).context("failed to serialize route table to JSON")
 }
+
+/// Generate an OpenAPI 3.1.0 document from discovered routes.
+pub fn generate_openapi(
+    routes: &[DiscoveredRoute],
+    title: &str,
+    version: &str,
+) -> serde_json::Value {
+    let mut paths = serde_json::Map::new();
+
+    for route in routes {
+        let path_item = paths
+            .entry(&route.path)
+            .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+
+        if let serde_json::Value::Object(methods) = path_item {
+            let method_key = route.method.to_lowercase();
+            if method_key == "any" {
+                for m in &["get", "post"] {
+                    methods.entry(*m).or_insert_with(|| {
+                        serde_json::json!({
+                            "summary": format!("{} {}", m.to_uppercase(), route.path),
+                            "responses": {
+                                "200": { "description": "OK" }
+                            }
+                        })
+                    });
+                }
+            } else {
+                methods.insert(
+                    method_key,
+                    serde_json::json!({
+                        "summary": format!("{} {}", route.method, route.path),
+                        "responses": {
+                            "200": { "description": "OK" },
+                            "default": { "description": "Error response" }
+                        }
+                    }),
+                );
+            }
+        }
+    }
+
+    serde_json::json!({
+        "openapi": "3.1.0",
+        "info": {
+            "title": title,
+            "version": version
+        },
+        "paths": paths
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn generates_valid_openapi_doc() {
+        let routes = vec![
+            DiscoveredRoute {
+                method: "GET".to_string(),
+                path: "/users".to_string(),
+                handler: "list_users".to_string(),
+                source_file: "src/api/users.rs".to_string(),
+            },
+            DiscoveredRoute {
+                method: "POST".to_string(),
+                path: "/users".to_string(),
+                handler: "create_user".to_string(),
+                source_file: "src/api/users.rs".to_string(),
+            },
+        ];
+
+        let doc = generate_openapi(&routes, "Test API", "1.0.0");
+        assert_eq!(doc["openapi"], "3.1.0");
+        assert_eq!(doc["info"]["title"], "Test API");
+        assert_eq!(doc["info"]["version"], "1.0.0");
+        assert!(doc["paths"]["/users"]["get"].is_object());
+        assert!(doc["paths"]["/users"]["post"].is_object());
+    }
+}

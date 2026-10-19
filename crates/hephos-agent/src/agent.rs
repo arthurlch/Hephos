@@ -6,7 +6,7 @@ use serde::de::DeserializeOwned;
 
 use crate::message::{Message, TextStream};
 use crate::model::{Completion, Model};
-use crate::tool::{Tool, ToolCall, ToolResult, ToolSchema};
+use crate::tool::{Tool, ToolCall, ToolDefinition, ToolResult, ToolSchema, Tools};
 
 /// Bounds on a single agent run. There is no unbounded agent loop in Hephos.
 ///
@@ -40,7 +40,7 @@ impl Default for Limits {
 pub struct Agent<M: Model> {
     model: M,
     system: String,
-    tools: Vec<RegisteredTool>,
+    tools: Tools,
     limits: Limits,
     cancel_token: Option<CancellationToken>,
 }
@@ -50,7 +50,7 @@ impl<M: Model> Agent<M> {
         Agent {
             model,
             system: String::new(),
-            tools: Vec::new(),
+            tools: Tools::new(),
             limits: Limits::default(),
             cancel_token: None,
         }
@@ -61,14 +61,27 @@ impl<M: Model> Agent<M> {
         self
     }
 
+    /// Register a single [`Tool`] on this agent.
     pub fn tool<T: Tool>(mut self, tool: T) -> Self {
-        assert!(
-            !self.tools.iter().any(|t| t.schema.name == T::NAME),
-            "tool with name '{}' is already registered on this agent",
-            T::NAME
-        );
-        self.tools.push(RegisteredTool::new(tool));
+        self.tools.register(tool);
         self
+    }
+
+    /// Register an entire [`Tools`] collection on this agent.
+    pub fn tools(mut self, tools: Tools) -> Self {
+        self.tools.extend(tools);
+        self
+    }
+
+    /// Register an erased or dynamic [`ToolDefinition`] on this agent.
+    pub fn tool_definition(mut self, def: ToolDefinition) -> Self {
+        self.tools.register_definition(def);
+        self
+    }
+
+    /// Access the registered tools collection.
+    pub fn tools_ref(&self) -> &Tools {
+        &self.tools
     }
 
     pub fn limits(mut self, limits: Limits) -> Self {
@@ -157,7 +170,7 @@ impl<M: Model> Agent<M> {
     }
 
     fn tool_schemas(&self) -> Vec<ToolSchema> {
-        self.tools.iter().map(|t| t.schema.clone()).collect()
+        self.tools.schemas()
     }
 
     /// The shared turn loop, bounded by every `Limits` dimension: it enforces the
@@ -239,47 +252,7 @@ impl<M: Model> Agent<M> {
 
     async fn dispatch(&self, call: ToolCall) -> Result<ToolResult> {
         let _span = tracing::info_span!("agent.tool", tool = %call.name).entered();
-        let tool = self
-            .tools
-            .iter()
-            .find(|t| t.schema.name == call.name)
-            .ok_or_else(|| Error::invalid(format!("unknown tool: {}", call.name)))?;
-        (tool.invoke)(call.input, call.id).await
-    }
-}
-
-/// A tool erased to `serde_json::Value` in/out, so the agent can hold tools of
-/// different concrete types in one list.
-struct RegisteredTool {
-    schema: ToolSchema,
-    invoke: Box<
-        dyn Fn(serde_json::Value, String) -> futures::future::BoxFuture<'static, Result<ToolResult>>
-            + Send
-            + Sync,
-    >,
-}
-
-impl RegisteredTool {
-    fn new<T: Tool>(tool: T) -> Self {
-        let schema = crate::tool::schema_for::<T>();
-        let name = T::NAME;
-        let tool = std::sync::Arc::new(tool);
-        let invoke = Box::new(move |raw: serde_json::Value, call_id: String| {
-            let tool = tool.clone();
-            Box::pin(async move {
-                let input: T::Input = serde_json::from_value(raw)
-                    .map_err(|e| Error::invalid(format!("invalid input for {name}: {e}")))?;
-                let output = tool.call(input).await?;
-                let output = serde_json::to_value(output)
-                    .map_err(|e| Error::internal(format!("tool {name} output: {e}")))?;
-                Ok(ToolResult {
-                    call_id,
-                    name: name.to_string(),
-                    output,
-                })
-            }) as futures::future::BoxFuture<'static, Result<ToolResult>>
-        });
-        RegisteredTool { schema, invoke }
+        self.tools.dispatch(call).await
     }
 }
 
@@ -368,13 +341,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn registered_tool_invocation_and_error_handling() {
-        let reg = RegisteredTool::new(AddTool);
-        assert_eq!(reg.schema.name, "add");
-        assert_eq!(reg.schema.description, "adds two numbers");
+    async fn tool_definition_invocation_and_error_handling() {
+        let reg = ToolDefinition::new(AddTool);
+        assert_eq!(reg.schema().name, "add");
+        assert_eq!(reg.schema().description, "adds two numbers");
 
         // 1. Valid input
-        let res = (reg.invoke)(serde_json::json!({ "a": 10, "b": 25 }), "c_123".into())
+        let res = reg
+            .call(serde_json::json!({ "a": 10, "b": 25 }), "c_123".into())
             .await
             .unwrap();
         assert_eq!(res.call_id, "c_123");
@@ -382,13 +356,15 @@ mod tests {
         assert_eq!(res.output, serde_json::json!(35));
 
         // 2. Invalid input (missing field)
-        let err_missing = (reg.invoke)(serde_json::json!({ "a": 10 }), "c_123".into())
+        let err_missing = reg
+            .call(serde_json::json!({ "a": 10 }), "c_123".into())
             .await
             .unwrap_err();
         assert!(matches!(err_missing, Error::Invalid(_)));
 
         // 3. Invalid input (wrong type)
-        let err_type = (reg.invoke)(serde_json::json!({ "a": "ten", "b": 25 }), "c_123".into())
+        let err_type = reg
+            .call(serde_json::json!({ "a": "ten", "b": 25 }), "c_123".into())
             .await
             .unwrap_err();
         assert!(matches!(err_type, Error::Invalid(_)));

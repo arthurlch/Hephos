@@ -202,9 +202,81 @@ where
         self
     }
 
+    /// Mount a service under a sub-path prefix, e.g. nesting an external service or
+    /// transport handler (such as an MCP Streamable HTTP service).
+    pub fn nest_service<T>(mut self, prefix: &str, service: T) -> Self
+    where
+        T: tower::Service<axum::extract::Request, Error = std::convert::Infallible>
+            + Clone
+            + Send
+            + Sync
+            + 'static,
+        T::Response: axum::response::IntoResponse,
+        T::Future: Send + 'static,
+    {
+        assert!(
+            prefix != "/" && !prefix.is_empty(),
+            "Router::nest_service(\"{prefix}\", ..) is invalid: nesting at the root is not \
+             supported. Mount services under an explicit non-root path.",
+        );
+        self.inner = self.inner.nest_service(prefix, service);
+        self.entries.push(RouteEntry {
+            method: "ANY".to_string(),
+            path: format!("{}/*", prefix.trim_end_matches('/')),
+        });
+        self
+    }
+
     /// Return the list of routes registered on this router.
     pub fn entries(&self) -> &[RouteEntry] {
         &self.entries
+    }
+
+    /// Generate an OpenAPI 3.1 specification document from this router's route entries.
+    pub fn openapi(&self, title: &str, version: &str) -> serde_json::Value {
+        let mut paths = serde_json::Map::new();
+
+        for entry in &self.entries {
+            let path_item = paths
+                .entry(&entry.path)
+                .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+
+            if let serde_json::Value::Object(methods) = path_item {
+                let method_key = entry.method.to_lowercase();
+                if method_key == "any" {
+                    for m in &["get", "post"] {
+                        methods.entry(*m).or_insert_with(|| {
+                            serde_json::json!({
+                                "summary": format!("{} {}", m.to_uppercase(), entry.path),
+                                "responses": {
+                                    "200": { "description": "OK" }
+                                }
+                            })
+                        });
+                    }
+                } else {
+                    methods.insert(
+                        method_key,
+                        serde_json::json!({
+                            "summary": format!("{} {}", entry.method, entry.path),
+                            "responses": {
+                                "200": { "description": "OK" },
+                                "default": { "description": "Error response" }
+                            }
+                        }),
+                    );
+                }
+            }
+        }
+
+        serde_json::json!({
+            "openapi": "3.1.0",
+            "info": {
+                "title": title,
+                "version": version
+            },
+            "paths": paths
+        })
     }
 
     pub(crate) fn into_inner(self) -> axum::Router<S> {
@@ -516,5 +588,48 @@ mod tests {
     #[should_panic(expected = "reserved by Hephos")]
     fn reserving_ready_panics_with_guidance() {
         let _ = Router::<()>::new().get("/ready", ok);
+    }
+
+    #[test]
+    fn tracks_route_entries_with_nest_service() {
+        let svc = tower::service_fn(|_req: axum::extract::Request| async {
+            Ok::<_, std::convert::Infallible>(crate::StatusCode::OK)
+        });
+        let router = Router::<()>::new()
+            .get("/api", ok)
+            .nest_service("/mcp", svc);
+        let entries = router.entries();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[1].method, "ANY");
+        assert_eq!(entries[1].path, "/mcp/*");
+    }
+
+    #[test]
+    #[should_panic(expected = "Router::nest_service")]
+    fn nest_service_at_root_panics() {
+        let svc = tower::service_fn(|_req: axum::extract::Request| async {
+            Ok::<_, std::convert::Infallible>(crate::StatusCode::OK)
+        });
+        let _ = Router::<()>::new().nest_service("/", svc);
+    }
+
+    #[test]
+    fn generates_valid_openapi_doc() {
+        let router = Router::<()>::new()
+            .get("/users", ok)
+            .post("/users", ok)
+            .get("/users/{id}", ok);
+
+        let doc = router.openapi("Test Service", "0.1.0");
+        assert_eq!(doc["openapi"], "3.1.0");
+        assert_eq!(doc["info"]["title"], "Test Service");
+        assert_eq!(doc["info"]["version"], "0.1.0");
+
+        let paths = doc["paths"].as_object().unwrap();
+        assert!(paths.contains_key("/users"));
+        assert!(paths.contains_key("/users/{id}"));
+        assert!(paths["/users"].get("get").is_some());
+        assert!(paths["/users"].get("post").is_some());
+        assert!(paths["/users/{id}"].get("get").is_some());
     }
 }

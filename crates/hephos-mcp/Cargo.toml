@@ -11,12 +11,12 @@ description = "Hephos MCP integration: expose Hephos tools over the Model Contex
 hephos-core = { workspace = true }
 hephos-agent = { workspace = true }
 rmcp = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
+tokio = { workspace = true }
 tracing = { workspace = true }
-anyhow = { workspace = true }
 
 [dev-dependencies]
 hephos-core = { workspace = true }
 serde = { workspace = true }
 schemars = { workspace = true }
-tokio = { workspace = true }

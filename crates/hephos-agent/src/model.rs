@@ -46,11 +46,11 @@ mod tests {
         let completion = Completion {
             system: "you are a helpful assistant".into(),
             messages: vec![Message::user("hello"), Message::assistant("world")],
-            tools: vec![ToolSchema {
-                name: "dummy",
-                description: "dummy tool",
-                input_schema: serde_json::json!({ "type": "object" }),
-            }],
+            tools: vec![ToolSchema::new(
+                "dummy",
+                "dummy tool",
+                serde_json::json!({ "type": "object" }),
+            )],
             max_tokens: 1024,
             response_schema: Some(serde_json::json!({ "type": "string" })),
         };

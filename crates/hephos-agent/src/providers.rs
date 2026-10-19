@@ -302,8 +302,8 @@ fn build_anthropic_payload<'a>(
     let mut tools = Vec::new();
     for t in &request.tools {
         tools.push(AnthropicToolPayload {
-            name: t.name,
-            description: t.description,
+            name: &t.name,
+            description: &t.description,
             input_schema: &t.input_schema,
         });
     }
@@ -665,11 +665,11 @@ mod tests {
                 ),
                 Message::tool_result("t1", "result"),
             ],
-            tools: vec![ToolSchema {
-                name: "search",
-                description: "search",
-                input_schema: serde_json::json!({"type": "object"}),
-            }],
+            tools: vec![ToolSchema::new(
+                "search",
+                "search",
+                serde_json::json!({"type": "object"}),
+            )],
             max_tokens: 1024,
             response_schema: None,
         };
