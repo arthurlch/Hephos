@@ -29,7 +29,7 @@ pub use error::{Error, Result};
 pub use event::{Event, Events};
 pub use extract::{Json, Path, Query};
 pub use identity::{Identity, Principal};
-pub use router::Router;
+pub use router::{RouteEntry, Router};
 pub use task::Task;
 pub use telemetry::RedMetrics;
 

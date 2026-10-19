@@ -17,8 +17,18 @@ use crate::identity::Identity;
 /// `layer` exists but is reserved for the framework's own middleware. Application
 /// code should not add layers here; cross-cutting behavior belongs in the
 /// standard stack installed by [`crate::App`].
+/// A route registered on a [`Router`].
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct RouteEntry {
+    /// HTTP method (GET, POST, PUT, PATCH, DELETE).
+    pub method: String,
+    /// Path pattern (e.g. `/users`, `/products/{id}`).
+    pub path: String,
+}
+
 pub struct Router<S> {
     inner: axum::Router<S>,
+    entries: Vec<RouteEntry>,
 }
 
 /// Probe paths reserved by the framework. Applications cannot define custom routes
@@ -33,6 +43,7 @@ where
     pub fn new() -> Self {
         Router {
             inner: axum::Router::new(),
+            entries: Vec::new(),
         }
     }
 
@@ -41,7 +52,7 @@ where
         H: Handler<T, S>,
         T: 'static,
     {
-        self.method(path, routing::get(handler))
+        self.method_with_verb("GET", path, routing::get(handler))
     }
 
     pub fn post<H, T>(self, path: &str, handler: H) -> Self
@@ -49,7 +60,7 @@ where
         H: Handler<T, S>,
         T: 'static,
     {
-        self.method(path, routing::post(handler))
+        self.method_with_verb("POST", path, routing::post(handler))
     }
 
     pub fn put<H, T>(self, path: &str, handler: H) -> Self
@@ -57,7 +68,7 @@ where
         H: Handler<T, S>,
         T: 'static,
     {
-        self.method(path, routing::put(handler))
+        self.method_with_verb("PUT", path, routing::put(handler))
     }
 
     pub fn patch<H, T>(self, path: &str, handler: H) -> Self
@@ -65,7 +76,7 @@ where
         H: Handler<T, S>,
         T: 'static,
     {
-        self.method(path, routing::patch(handler))
+        self.method_with_verb("PATCH", path, routing::patch(handler))
     }
 
     pub fn delete<H, T>(self, path: &str, handler: H) -> Self
@@ -73,7 +84,7 @@ where
         H: Handler<T, S>,
         T: 'static,
     {
-        self.method(path, routing::delete(handler))
+        self.method_with_verb("DELETE", path, routing::delete(handler))
     }
 
     /// Combine another router at the same level. This is how `api::routes()`
@@ -81,6 +92,7 @@ where
     /// paths (`/users`, `/products`).
     pub fn merge(mut self, router: Router<S>) -> Self {
         self.inner = self.inner.merge(router.inner);
+        self.entries.extend(router.entries);
         self
     }
 
@@ -98,6 +110,16 @@ where
              supported. Use Router::merge(..) to combine routers at the same level.",
         );
         self.inner = self.inner.nest(prefix, router.inner);
+        let clean_prefix = prefix.trim_end_matches('/');
+        for mut entry in router.entries {
+            let clean_path = entry.path.trim_start_matches('/');
+            entry.path = if clean_path.is_empty() {
+                clean_prefix.to_string()
+            } else {
+                format!("{clean_prefix}/{clean_path}")
+            };
+            self.entries.push(entry);
+        }
         self
     }
 
@@ -161,14 +183,28 @@ where
         self
     }
 
-    fn method(mut self, path: &str, method: routing::MethodRouter<S>) -> Self {
+    fn method_with_verb(
+        mut self,
+        verb: &'static str,
+        path: &str,
+        method: routing::MethodRouter<S>,
+    ) -> Self {
         assert!(
             !RESERVED_PROBE_PATHS.contains(&path),
             "route \"{path}\" is reserved by Hephos for framework probes. \
              Liveness (/health) is auto-mounted; configure readiness via App::readiness.",
         );
         self.inner = self.inner.route(path, method);
+        self.entries.push(RouteEntry {
+            method: verb.to_string(),
+            path: path.to_string(),
+        });
         self
+    }
+
+    /// Return the list of routes registered on this router.
+    pub fn entries(&self) -> &[RouteEntry] {
+        &self.entries
     }
 
     pub(crate) fn into_inner(self) -> axum::Router<S> {
@@ -382,6 +418,80 @@ mod tests {
             .patch("/d", ok)
             .delete("/e", ok)
             .merge(Router::<()>::new().get("/sub", ok));
+    }
+
+    #[test]
+    fn tracks_route_entries_across_methods_merge_and_nest() {
+        let sub = Router::<()>::new().get("/items", ok).post("/items", ok);
+        let nested = Router::<()>::new().get("/details", ok);
+
+        let router = Router::<()>::new()
+            .get("/users", ok)
+            .post("/users", ok)
+            .put("/users/{id}", ok)
+            .patch("/users/{id}", ok)
+            .delete("/users/{id}", ok)
+            .merge(sub)
+            .nest("/nested", nested);
+
+        let entries = router.entries();
+        assert_eq!(entries.len(), 8);
+        assert_eq!(
+            entries[0],
+            RouteEntry {
+                method: "GET".into(),
+                path: "/users".into()
+            }
+        );
+        assert_eq!(
+            entries[1],
+            RouteEntry {
+                method: "POST".into(),
+                path: "/users".into()
+            }
+        );
+        assert_eq!(
+            entries[2],
+            RouteEntry {
+                method: "PUT".into(),
+                path: "/users/{id}".into()
+            }
+        );
+        assert_eq!(
+            entries[3],
+            RouteEntry {
+                method: "PATCH".into(),
+                path: "/users/{id}".into()
+            }
+        );
+        assert_eq!(
+            entries[4],
+            RouteEntry {
+                method: "DELETE".into(),
+                path: "/users/{id}".into()
+            }
+        );
+        assert_eq!(
+            entries[5],
+            RouteEntry {
+                method: "GET".into(),
+                path: "/items".into()
+            }
+        );
+        assert_eq!(
+            entries[6],
+            RouteEntry {
+                method: "POST".into(),
+                path: "/items".into()
+            }
+        );
+        assert_eq!(
+            entries[7],
+            RouteEntry {
+                method: "GET".into(),
+                path: "/nested/details".into()
+            }
+        );
     }
 
     #[test]

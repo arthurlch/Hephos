@@ -1,0 +1,23 @@
+[package]
+name = "hephos-cli"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "CLI for Hephos: scaffold apps and inspect route tables."
+
+[lib]
+name = "hephos_cli"
+path = "src/lib.rs"
+
+[[bin]]
+name = "hephos"
+path = "src/main.rs"
+
+[dependencies]
+clap = { workspace = true }
+hephos-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }

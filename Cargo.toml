@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/hephos",
+    "crates/hephos-cli",
     "crates/hephos-core",
     "crates/hephos-db",
     "crates/hephos-agent",
@@ -71,6 +72,9 @@ async-stream = "0.3"
 
 # mcp
 rmcp = { version = "0.9", features = ["server", "transport-io", "transport-streamable-http-server"] }
+
+# cli
+clap = { version = "4", features = ["derive"] }
 
 # Faster edit→check→test loop for agents: line-tables-only debuginfo links much
 # faster than full debuginfo while keeping backtraces and line numbers.
