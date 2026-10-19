@@ -11,5 +11,6 @@ pub fn build<M: Model>(model: M) -> Agent<M> {
             max_turns: 4,
             max_tokens: 1024,
             timeout: Duration::from_secs(30),
+            max_tool_calls_per_turn: 16,
         })
 }

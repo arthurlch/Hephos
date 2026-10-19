@@ -341,23 +341,23 @@ an emitted event is delivered after a simulated crash between commit and dispatc
 
 ---
 
-## `0.5.0` — The agent layer, real
+## `0.5.0` — The agent layer, real ✅ (shipped)
 
 **Theme.** The agent-native promise becomes executable.
 
-**Ship.**
-- `Model` providers implemented: Anthropic first, then OpenAI — thin `reqwest`
-  clients behind the two-method trait.
-- The turn loop + tool dispatch (`parse_tool_calls`) fully implemented and bounded
-  by `Limits` (turns/tokens/timeout), with an explicit error on overrun.
-- Structured output (`run_typed`) enforced via provider-native constrained output.
-- Token streaming through the unified stream primitive (same as HTTP streaming).
-- Per-turn / per-tool tracing spans and cancellation inherited from `Ctx`.
+**Shipped.**
+- ✅ `Model` providers implemented: Anthropic first, then OpenAI — thin `reqwest`
+  clients behind the two-method trait (`providers::Anthropic`, `providers::OpenAI`).
+- ✅ The turn loop + tool dispatch (`parse_tool_calls`) fully implemented and bounded
+  by `Limits` (turns/tokens/timeout/fan-out), with an explicit error on overrun.
+- ✅ Structured output (`run_typed`) enforced via provider-native constrained output.
+- ✅ Token streaming through the unified stream primitive (same as HTTP streaming).
+- ✅ Per-turn / per-tool tracing spans and cancellation inherited from `Ctx` via `cancel_token`.
 
 **Explicitly not yet.** Durable/long-running agents (needs `0.7`); agent memory
 stores; multi-agent orchestration frameworks.
 
-**Acceptance.** The `agent` example runs against a real provider (and a scripted
+**Acceptance (met).** The `agent` example runs against a real provider (and a scripted
 one offline); a tool-using agent dispatches a tool and returns structured output; a
 run that exceeds `max_turns` errors; dropping the stream cancels generation.
 

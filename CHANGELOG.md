@@ -3,6 +3,25 @@
 All notable changes to Hephos are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer.
 
+## [0.5.0] - 2026-10-19
+
+### Added
+- **Real Model Providers (`hephos-agent::providers`)**:
+  - `Anthropic`: Complete and SSE streaming client against `POST /v1/messages` using `reqwest`. Supports text generations, tool calling (`tool_use`), tool result feedback (`tool_result`), and native structured output via constrained tool choices.
+  - `OpenAI`: Complete and SSE streaming client against `POST /v1/chat/completions`. Supports text responses, tool calling (`type: function`), tool result replies (`role: tool`), and structured output enforcement via `response_format` with `json_schema`.
+  - Configurable `with_base_url` on both providers for offline mock testing, local model gateways, or custom proxy deployments.
+- **Turn Loop & Tool Dispatch (`Agent`)**:
+  - Full turn-based tool execution loop with `parse_tool_calls` model seam, extracting requested tools, dispatching to registered tools, and feeding `ToolResult` messages back to the model.
+  - Runtime bounds via `Limits`: turn limits (`max_turns`), token ceilings (`max_tokens`), wall-clock timeouts (`timeout`), and per-turn tool-call fan-out bounds (`max_tool_calls_per_turn`).
+  - Cancellation propagation via `cancel_token(CancellationToken)` integrating with `Ctx::cancel_token`.
+  - Tracing spans attached per turn (`agent.turn`) and per tool execution (`agent.tool`).
+  - `Agent::stream` handles tool-free agents via direct model token streaming and tool-using agents by executing tool turns and streaming the final text deltas.
+  - Dropping the stream immediately aborts generation and closes underlying network streams.
+- **Structured Output (`Agent::run_typed`)**:
+  - Native JSON schema generation via `schemars` and validation for type-safe structured agent outputs.
+- **Example Agent Integration**:
+  - Enhanced `examples/agent` to dynamically use `Anthropic` or `OpenAI` when `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` is present in the environment, falling back smoothly to `ScriptedModel` for offline and CI runs.
+
 ## [0.4.0] - 2026-10-19
 
 ### Added

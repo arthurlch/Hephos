@@ -1,7 +1,7 @@
 use hephos_core::Result;
 use schemars::JsonSchema;
-use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 
 /// A strongly typed capability an agent may call.
 ///
@@ -54,17 +54,65 @@ pub struct ToolSchema {
 }
 
 /// A model's request to invoke a tool, before dispatch.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ToolCall {
+    #[serde(default)]
+    pub id: String,
     pub name: String,
     pub input: serde_json::Value,
 }
 
+impl ToolCall {
+    pub fn new(name: impl Into<String>, input: serde_json::Value) -> Self {
+        ToolCall {
+            id: String::new(),
+            name: name.into(),
+            input,
+        }
+    }
+
+    pub fn with_id(
+        id: impl Into<String>,
+        name: impl Into<String>,
+        input: serde_json::Value,
+    ) -> Self {
+        ToolCall {
+            id: id.into(),
+            name: name.into(),
+            input,
+        }
+    }
+}
+
 /// The outcome of a tool invocation, fed back to the model.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ToolResult {
+    #[serde(default)]
+    pub call_id: String,
     pub name: String,
     pub output: serde_json::Value,
+}
+
+impl ToolResult {
+    pub fn new(name: impl Into<String>, output: serde_json::Value) -> Self {
+        ToolResult {
+            call_id: String::new(),
+            name: name.into(),
+            output,
+        }
+    }
+
+    pub fn with_call_id(
+        call_id: impl Into<String>,
+        name: impl Into<String>,
+        output: serde_json::Value,
+    ) -> Self {
+        ToolResult {
+            call_id: call_id.into(),
+            name: name.into(),
+            output,
+        }
+    }
 }
 
 /// Produce the [`ToolSchema`] for a tool type. Used by [`crate::Agent`] when
@@ -124,16 +172,13 @@ mod tests {
             .unwrap();
         assert_eq!(res, "item: 3");
 
-        let call = ToolCall {
-            name: "mock_tool".into(),
-            input: serde_json::json!({ "name": "item", "count": 3 }),
-        };
+        let call = ToolCall::new(
+            "mock_tool",
+            serde_json::json!({ "name": "item", "count": 3 }),
+        );
         assert_eq!(call.name, "mock_tool");
 
-        let tool_res = ToolResult {
-            name: "mock_tool".into(),
-            output: serde_json::json!("item: 3"),
-        };
+        let tool_res = ToolResult::new("mock_tool", serde_json::json!("item: 3"));
         assert_eq!(tool_res.name, "mock_tool");
     }
 }
