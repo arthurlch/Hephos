@@ -258,11 +258,14 @@ pub fn init_telemetry(format: LogFormat, config: &TelemetryConfig) -> Result<Tel
 
 fn signal_endpoint(base: &str, signal_path: &str) -> String {
     let trimmed = base.trim_end_matches('/');
-    if trimmed.ends_with("/v1/metrics")
-        || trimmed.ends_with("/v1/logs")
-        || trimmed.ends_with("/v1/traces")
-    {
+    if trimmed.ends_with(signal_path) {
         trimmed.to_string()
+    } else if let Some(stripped) = trimmed
+        .strip_suffix("/v1/metrics")
+        .or_else(|| trimmed.strip_suffix("/v1/logs"))
+        .or_else(|| trimmed.strip_suffix("/v1/traces"))
+    {
+        format!("{stripped}/{signal_path}")
     } else {
         format!("{trimmed}/{signal_path}")
     }
@@ -314,6 +317,34 @@ mod tests {
     fn empty_handles_shutdown_cleanly() {
         let handles = TelemetryHandles::empty();
         handles.shutdown();
+    }
+
+    #[test]
+    fn signal_endpoint_construction() {
+        assert_eq!(
+            signal_endpoint("http://localhost:4318", "v1/metrics"),
+            "http://localhost:4318/v1/metrics"
+        );
+        assert_eq!(
+            signal_endpoint("http://localhost:4318/", "v1/logs"),
+            "http://localhost:4318/v1/logs"
+        );
+        assert_eq!(
+            signal_endpoint("http://localhost:4318/v1/metrics", "v1/metrics"),
+            "http://localhost:4318/v1/metrics"
+        );
+        assert_eq!(
+            signal_endpoint("http://localhost:4318/v1/metrics", "v1/logs"),
+            "http://localhost:4318/v1/logs"
+        );
+        assert_eq!(
+            signal_endpoint("http://localhost:4318/v1/traces", "v1/metrics"),
+            "http://localhost:4318/v1/metrics"
+        );
+        assert_eq!(
+            signal_endpoint("http://collector.local:4318/custom", "v1/traces"),
+            "http://collector.local:4318/custom/v1/traces"
+        );
     }
 
     #[tokio::test]
