@@ -45,9 +45,7 @@ pub use tokio_util::sync::CancellationToken;
 pub mod ws;
 
 /// The blessed server-sent-events / streaming primitives.
-pub mod sse {
-    pub use axum::response::sse::{Event, KeepAlive, Sse};
-}
+pub mod sse;
 
 /// Lower-level HTTP primitives for the handler escape hatches (raw bodies, request
 /// headers, custom responses) — so an app reaches for these, not `axum` directly. See
