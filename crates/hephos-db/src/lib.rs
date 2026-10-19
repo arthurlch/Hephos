@@ -266,7 +266,7 @@ pub mod test {
 
     /// Split `postgres://user:pass@host:port/dbname[?params]` into the server prefix
     /// (everything up to the database name) and the database name.
-    fn split_server(url: &str) -> Result<(String, String)> {
+    pub(crate) fn split_server(url: &str) -> Result<(String, String)> {
         let without_query = url.split('?').next().unwrap_or(url);
         let idx = without_query
             .rfind('/')
@@ -377,5 +377,52 @@ mod tests {
         assert!(Db::connect_lazy("postgres://user@localhost/db").is_ok());
         // Only the URL is parsed here, so a malformed one is the one failure mode.
         assert!(Db::connect_lazy("not-a-url").is_err());
+    }
+
+    #[test]
+    fn split_server_validation() {
+        let (server, db) =
+            crate::test::split_server("postgres://admin:pass@localhost:5432/my_app").unwrap();
+        assert_eq!(server, "postgres://admin:pass@localhost:5432");
+        assert_eq!(db, "my_app");
+
+        assert!(crate::test::split_server("postgres://localhost:5432/").is_err());
+        assert!(crate::test::split_server("postgres://localhost").is_err());
+        assert!(crate::test::split_server("invalid-url").is_err());
+    }
+
+    #[test]
+    fn is_unique_violation_returns_false_for_non_db_errors() {
+        assert!(!is_unique_violation(&sqlx::Error::RowNotFound));
+        assert!(!is_unique_violation(&sqlx::Error::PoolClosed));
+    }
+
+    #[tokio::test]
+    async fn connect_lazy_with_custom_pool_config() {
+        let config = PoolConfig {
+            max_connections: 32,
+            acquire_timeout: Duration::from_secs(5),
+            statement_timeout: Duration::from_secs(15),
+        };
+        let db = Db::connect_lazy_with("postgres://user@localhost/db", config).unwrap();
+        assert_eq!(db.pool().options().get_max_connections(), 32);
+
+        assert!(Db::connect_lazy_with("invalid-dsn", config).is_err());
+    }
+
+    #[test]
+    fn pool_config_debug_and_copy() {
+        let config = PoolConfig {
+            max_connections: 8,
+            acquire_timeout: Duration::from_secs(2),
+            statement_timeout: Duration::from_secs(4),
+        };
+        let copied = config;
+        assert_eq!(copied.max_connections, 8);
+        assert_eq!(copied.acquire_timeout, Duration::from_secs(2));
+        assert_eq!(copied.statement_timeout, Duration::from_secs(4));
+
+        let debug_str = format!("{:?}", config);
+        assert!(debug_str.contains("max_connections: 8"));
     }
 }

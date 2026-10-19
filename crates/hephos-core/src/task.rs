@@ -33,3 +33,74 @@ pub trait Task<S>: Send + Sync + 'static {
 
     fn run(&self, ctx: Ctx<S>) -> impl std::future::Future<Output = Result<()>> + Send;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::time::Duration;
+    use tokio_util::sync::CancellationToken;
+
+    struct TestTask {
+        executed: Arc<AtomicBool>,
+    }
+
+    impl Task<()> for TestTask {
+        fn name(&self) -> &'static str {
+            "test_task"
+        }
+
+        async fn run(&self, ctx: Ctx<()>) -> Result<()> {
+            tokio::select! {
+                _ = ctx.cancel_token().cancelled() => {
+                    self.executed.store(true, Ordering::SeqCst);
+                }
+                _ = tokio::time::sleep(Duration::from_secs(10)) => {}
+            }
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn task_runs_and_cancels_cooperatively() {
+        let executed = Arc::new(AtomicBool::new(false));
+        let task = TestTask {
+            executed: executed.clone(),
+        };
+        assert_eq!(task.name(), "test_task");
+
+        let cancel = CancellationToken::new();
+        let ctx = Ctx::detached(()).with_cancel(cancel.clone());
+
+        let handle = tokio::spawn(async move {
+            task.run(ctx).await.unwrap();
+        });
+
+        cancel.cancel();
+        handle.await.unwrap();
+
+        assert!(executed.load(Ordering::SeqCst));
+    }
+
+    struct FailingTask;
+
+    impl Task<()> for FailingTask {
+        fn name(&self) -> &'static str {
+            "failing_task"
+        }
+
+        async fn run(&self, _ctx: Ctx<()>) -> Result<()> {
+            Err(crate::Error::internal("task failure"))
+        }
+    }
+
+    #[tokio::test]
+    async fn task_propagates_error() {
+        let task = FailingTask;
+        assert_eq!(task.name(), "failing_task");
+        let ctx = Ctx::detached(());
+        let res = task.run(ctx).await;
+        assert!(res.is_err());
+    }
+}

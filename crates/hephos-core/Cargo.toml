@@ -26,6 +26,7 @@ opentelemetry_sdk = { workspace = true }
 opentelemetry-otlp = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 opentelemetry-appender-tracing = { workspace = true }
+hyper = { workspace = true }
 # Optional: only to provide `From<sqlx::Error> for Error`. Core stays sqlx-free
 # unless a db-using crate turns this on (hephos-db does).
 sqlx = { workspace = true, optional = true }

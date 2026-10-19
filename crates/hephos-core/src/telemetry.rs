@@ -500,4 +500,25 @@ mod tests {
             "/health"
         );
     }
+
+    #[tokio::test]
+    async fn unmatched_route_fallback_records_and_returns_not_found() {
+        use axum::body::to_bytes;
+        use axum::http::StatusCode;
+        use serde_json::Value;
+
+        let metrics = RedMetrics::new();
+        let req = Request::builder()
+            .method("GET")
+            .uri("/does-not-exist")
+            .body(axum::body::Body::empty())
+            .unwrap();
+
+        let res = unmatched_route_fallback(metrics, req).await;
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+        let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let json: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["error"]["kind"], "not_found");
+        assert_eq!(json["error"]["message"], "not found not found");
+    }
 }

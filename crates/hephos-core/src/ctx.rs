@@ -216,4 +216,48 @@ mod tests {
         let ctx = Ctx::detached(());
         assert!(!ctx.cancel_token().is_cancelled());
     }
+
+    #[test]
+    fn with_cancel_binds_cancellation() {
+        let token = CancellationToken::new();
+        let ctx = Ctx::detached(()).with_cancel(token.clone());
+        assert!(!ctx.cancel_token().is_cancelled());
+        token.cancel();
+        assert!(ctx.cancel_token().is_cancelled());
+    }
+
+    #[test]
+    fn state_and_request_id_access() {
+        let ctx = Ctx::detached(42usize);
+        assert_eq!(*ctx.state(), 42usize);
+        assert!(!ctx.request_id().is_nil());
+    }
+
+    #[tokio::test]
+    async fn from_request_parts_extracts_populated_extensions() {
+        use axum::http::Request;
+
+        let req_id = Uuid::new_v4();
+        let cancel = CancellationToken::new();
+        let identity = user(&["admin"]);
+
+        let mut req = Request::builder()
+            .uri("/")
+            .body(axum::body::Body::empty())
+            .unwrap();
+
+        req.extensions_mut().insert(RequestId(req_id));
+        req.extensions_mut().insert(cancel.clone());
+        req.extensions_mut().insert(identity);
+
+        let (mut parts, _) = req.into_parts();
+        let ctx = Ctx::<String>::from_request_parts(&mut parts, &"app-state".to_string())
+            .await
+            .unwrap();
+
+        assert_eq!(ctx.request_id(), req_id);
+        assert_eq!(ctx.state(), "app-state");
+        assert!(ctx.require_role("admin").is_ok());
+        assert!(!ctx.cancel_token().is_cancelled());
+    }
 }

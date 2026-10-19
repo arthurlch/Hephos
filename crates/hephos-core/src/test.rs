@@ -141,6 +141,13 @@ impl TestClient {
             .await
     }
 
+    /// Send a request that simulates an HTTP connection protocol upgrade (e.g. WebSocket).
+    pub async fn send_upgrade(&self, mut req: Request<Body>) -> TestResponse {
+        let on_upgrade = hyper::upgrade::on(&mut req);
+        req.extensions_mut().insert(on_upgrade);
+        self.send(req).await
+    }
+
     pub async fn delete(&self, path: &str) -> TestResponse {
         self.send(
             Request::builder()

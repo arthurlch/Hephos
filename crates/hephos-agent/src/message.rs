@@ -37,3 +37,27 @@ impl Message {
 /// A stream of text deltas from a model. Backed by the provider's SSE stream and
 /// bounded by the agent's limits. Dropping the stream cancels generation.
 pub type TextStream = BoxStream<'static, Result<String>>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn message_constructors_and_serialization() {
+        let user = Message::user("hello");
+        assert_eq!(user.role, Role::User);
+        assert_eq!(user.content, "hello");
+
+        let assistant = Message::assistant("world");
+        assert_eq!(assistant.role, Role::Assistant);
+        assert_eq!(assistant.content, "world");
+
+        let json = serde_json::to_string(&user).unwrap();
+        assert!(json.contains(r#""role":"user""#));
+        assert!(json.contains(r#""content":"hello""#));
+
+        let deserialized: Message = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.role, Role::User);
+        assert_eq!(deserialized.content, "hello");
+    }
+}

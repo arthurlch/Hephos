@@ -36,3 +36,36 @@ pub trait Model: Send + Sync + 'static {
         request: Completion,
     ) -> impl std::future::Future<Output = Result<TextStream>> + Send;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn completion_construction_and_cloning() {
+        let completion = Completion {
+            system: "you are a helpful assistant".into(),
+            messages: vec![Message::user("hello"), Message::assistant("world")],
+            tools: vec![ToolSchema {
+                name: "dummy",
+                description: "dummy tool",
+                input_schema: serde_json::json!({ "type": "object" }),
+            }],
+            max_tokens: 1024,
+            response_schema: Some(serde_json::json!({ "type": "string" })),
+        };
+
+        assert_eq!(completion.system, "you are a helpful assistant");
+        assert_eq!(completion.messages.len(), 2);
+        assert_eq!(completion.tools.len(), 1);
+        assert_eq!(completion.max_tokens, 1024);
+        assert!(completion.response_schema.is_some());
+
+        let cloned = completion.clone();
+        assert_eq!(cloned.system, completion.system);
+        assert_eq!(cloned.max_tokens, completion.max_tokens);
+
+        let debug_str = format!("{:?}", completion);
+        assert!(debug_str.contains("you are a helpful assistant"));
+    }
+}

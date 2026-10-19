@@ -465,4 +465,21 @@ mod tests {
             Error::Invalid(_)
         ));
     }
+
+    #[test]
+    fn rate_limit_config_constructor() {
+        let rlc = RateLimitConfig::new(20, 40);
+        assert_eq!(rlc.rps, 20);
+        assert_eq!(rlc.burst, 40);
+        let cloned = rlc;
+        assert_eq!(cloned, rlc);
+    }
+
+    #[test]
+    fn log_format_traits() {
+        assert_eq!(LogFormat::Pretty, LogFormat::Pretty);
+        assert_ne!(LogFormat::Pretty, LogFormat::Json);
+        assert_eq!(format!("{:?}", LogFormat::Json), "Json");
+        assert_eq!(format!("{:?}", LogFormat::Pretty), "Pretty");
+    }
 }

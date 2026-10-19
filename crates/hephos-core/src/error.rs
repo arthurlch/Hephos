@@ -232,4 +232,117 @@ mod tests {
         let err: Error = anyhow::anyhow!("underlying").into();
         assert!(matches!(err, Error::Internal(_)));
     }
+
+    #[tokio::test]
+    async fn into_response_renders_canonical_json_payload() {
+        use axum::body::to_bytes;
+        use serde_json::Value;
+
+        let err = Error::conflict("email taken");
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let json: Value = serde_json::from_slice(&bytes).unwrap();
+
+        assert_eq!(json["error"]["kind"], "conflict");
+        assert_eq!(json["error"]["message"], "email taken");
+    }
+
+    #[tokio::test]
+    async fn error_into_response_all_variants_exhaustive() {
+        use axum::body::to_bytes;
+        use serde_json::Value;
+
+        let cases: Vec<(Error, StatusCode, &'static str, &'static str)> = vec![
+            (
+                Error::not_found("book"),
+                StatusCode::NOT_FOUND,
+                "not_found",
+                "book not found",
+            ),
+            (
+                Error::invalid("name required"),
+                StatusCode::BAD_REQUEST,
+                "invalid",
+                "name required",
+            ),
+            (
+                Error::Unauthorized,
+                StatusCode::UNAUTHORIZED,
+                "unauthorized",
+                "unauthorized",
+            ),
+            (
+                Error::Forbidden,
+                StatusCode::FORBIDDEN,
+                "forbidden",
+                "forbidden",
+            ),
+            (
+                Error::conflict("slug in use"),
+                StatusCode::CONFLICT,
+                "conflict",
+                "slug in use",
+            ),
+            (
+                Error::PayloadTooLarge,
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "payload_too_large",
+                "request body too large",
+            ),
+            (
+                Error::rate_limited("wait 5s"),
+                StatusCode::TOO_MANY_REQUESTS,
+                "rate_limited",
+                "wait 5s",
+            ),
+            (
+                Error::unavailable("service down"),
+                StatusCode::SERVICE_UNAVAILABLE,
+                "unavailable",
+                "service down",
+            ),
+            (
+                Error::internal("database connection error with secret password"),
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "internal",
+                "internal error", // guaranteed opaque
+            ),
+        ];
+
+        for (err, expected_status, expected_kind, expected_message) in cases {
+            let res = err.into_response();
+            assert_eq!(res.status(), expected_status);
+            let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+            let json: Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(json["error"]["kind"], expected_kind);
+            assert_eq!(json["error"]["message"], expected_message);
+        }
+    }
+
+    #[test]
+    fn error_display_formats_cleanly() {
+        assert_eq!(format!("{}", Error::not_found("item")), "not found: item");
+        assert_eq!(
+            format!("{}", Error::invalid("bad field")),
+            "invalid: bad field"
+        );
+        assert_eq!(format!("{}", Error::Unauthorized), "unauthorized");
+        assert_eq!(format!("{}", Error::Forbidden), "forbidden");
+        assert_eq!(format!("{}", Error::conflict("dup")), "conflict: dup");
+        assert_eq!(format!("{}", Error::PayloadTooLarge), "payload too large");
+        assert_eq!(
+            format!("{}", Error::rate_limited("slow down")),
+            "too many requests: slow down"
+        );
+        assert_eq!(
+            format!("{}", Error::unavailable("maintenance")),
+            "service unavailable: maintenance"
+        );
+        assert_eq!(
+            format!("{}", Error::internal("unexpected failure")),
+            "unexpected failure"
+        );
+    }
 }

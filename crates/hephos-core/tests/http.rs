@@ -120,3 +120,21 @@ async fn verify_internal_error_is_500_not_401() {
     assert_eq!(res.status(), 500);
     assert_eq!(res.json::<Value>()["error"]["kind"], "internal");
 }
+
+#[tokio::test]
+async fn protected_route_allows_query_token() {
+    let res = app().get("/admin?token=admin").await;
+    assert_eq!(res.status(), 200);
+}
+
+#[tokio::test]
+async fn protected_route_forbids_without_role_in_query_token() {
+    let res = app().get("/admin?token=user").await;
+    assert_eq!(res.status(), 403);
+}
+
+#[tokio::test]
+async fn protected_route_rejects_invalid_query_token() {
+    let res = app().get("/admin?token=invalid").await;
+    assert_eq!(res.status(), 401);
+}

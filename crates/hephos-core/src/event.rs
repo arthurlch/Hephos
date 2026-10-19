@@ -69,6 +69,39 @@ mod tests {
         assert_eq!(rx.recv().await.unwrap(), TestEvent::Ping(42));
     }
 
+    #[tokio::test]
+    async fn multiple_subscribers_receive_broadcast() {
+        let events = Events::new(8);
+        let mut rx1 = events.subscribe();
+        let mut rx2 = events.subscribe();
+
+        let events_clone = events.clone();
+        events_clone.emit(TestEvent::Ping(100));
+
+        assert_eq!(rx1.recv().await.unwrap(), TestEvent::Ping(100));
+        assert_eq!(rx2.recv().await.unwrap(), TestEvent::Ping(100));
+    }
+
+    #[tokio::test]
+    async fn subscriber_observes_lag_when_buffer_overflows() {
+        // Buffer capacity of 2
+        let events = Events::new(2);
+        let mut rx = events.subscribe();
+
+        // Emit 4 events, exceeding buffer capacity
+        events.emit(TestEvent::Ping(1));
+        events.emit(TestEvent::Ping(2));
+        events.emit(TestEvent::Ping(3));
+        events.emit(TestEvent::Ping(4));
+
+        // First receive should report lagged
+        let result = rx.recv().await;
+        assert!(matches!(
+            result,
+            Err(broadcast::error::RecvError::Lagged(_))
+        ));
+    }
+
     #[test]
     fn emit_without_subscribers_does_not_panic() {
         let events: Events<TestEvent> = Events::new(8);

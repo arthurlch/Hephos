@@ -584,6 +584,7 @@ dependencies = [
  "hephos",
  "tokio",
  "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -913,6 +914,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "hyper",
  "opentelemetry",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",
@@ -955,6 +957,7 @@ dependencies = [
  "schemars 0.8.22",
  "serde",
  "serde_json",
+ "tokio",
  "tracing",
 ]
 

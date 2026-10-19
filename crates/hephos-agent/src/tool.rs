@@ -77,3 +77,63 @@ pub fn schema_for<T: Tool>() -> ToolSchema {
         input_schema: serde_json::to_value(schema).unwrap_or_default(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde::Deserialize;
+
+    #[derive(Deserialize, JsonSchema)]
+    struct MockInput {
+        name: String,
+        count: u32,
+    }
+
+    struct MockTool;
+
+    impl Tool for MockTool {
+        type Input = MockInput;
+        type Output = String;
+        const NAME: &'static str = "mock_tool";
+        const DESCRIPTION: &'static str = "A mock tool for testing";
+
+        async fn call(&self, input: Self::Input) -> Result<Self::Output> {
+            Ok(format!("{}: {}", input.name, input.count))
+        }
+    }
+
+    #[tokio::test]
+    async fn schema_for_generates_valid_schema() {
+        let schema = schema_for::<MockTool>();
+        assert_eq!(schema.name, "mock_tool");
+        assert_eq!(schema.description, "A mock tool for testing");
+        assert!(schema.input_schema.get("properties").is_some());
+        assert!(schema.input_schema["properties"].get("name").is_some());
+        assert!(schema.input_schema["properties"].get("count").is_some());
+    }
+
+    #[tokio::test]
+    async fn tool_call_and_result() {
+        let tool = MockTool;
+        let res = tool
+            .call(MockInput {
+                name: "item".into(),
+                count: 3,
+            })
+            .await
+            .unwrap();
+        assert_eq!(res, "item: 3");
+
+        let call = ToolCall {
+            name: "mock_tool".into(),
+            input: serde_json::json!({ "name": "item", "count": 3 }),
+        };
+        assert_eq!(call.name, "mock_tool");
+
+        let tool_res = ToolResult {
+            name: "mock_tool".into(),
+            output: serde_json::json!("item: 3"),
+        };
+        assert_eq!(tool_res.name, "mock_tool");
+    }
+}

@@ -125,4 +125,34 @@ mod tests {
         assert_eq!(registered.input_schema, agent_schema.input_schema);
         assert!(registered.input_schema.get("properties").is_some());
     }
+
+    struct Echo;
+
+    impl Tool for Echo {
+        type Input = Input;
+        type Output = String;
+        const NAME: &'static str = "echo";
+        const DESCRIPTION: &'static str = "echo query";
+        async fn call(&self, input: Input) -> Result<String> {
+            Ok(input.query)
+        }
+    }
+
+    #[test]
+    fn server_default_and_multiple_tools() {
+        let default_server = McpServer::default();
+        assert_eq!(default_server.tools.len(), 0);
+
+        let multi = McpServer::new().tool(Search).tool(Echo);
+        assert_eq!(multi.tools.len(), 2);
+        assert_eq!(multi.tools[0].name, "search");
+        assert_eq!(multi.tools[1].name, "echo");
+    }
+
+    #[tokio::test]
+    async fn server_serve_stdio_succeeds() {
+        let server = McpServer::new().tool(Search);
+        let res = server.serve_stdio().await;
+        assert!(res.is_ok());
+    }
 }
