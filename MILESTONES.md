@@ -293,23 +293,25 @@ test; a rate-limited route returns `429` under load; a panicking handler returns
 
 ---
 
-## `0.3.0` — Real-time & streaming maturity
+## `0.3.0` — Real-time & streaming maturity ✅ (shipped)
 
 **Theme.** Long-lived connections that behave under load and failure.
 
-**Ship.**
-- WebSocket hardening: auth-on-upgrade, heartbeat/idle timeout, max message size,
+**Shipped.**
+- ✅ WebSocket hardening: auth-on-upgrade, heartbeat/idle timeout, max message size,
   backpressure (the no-spawn split-loop pattern as canon), clean close semantics.
-- SSE maturity: `Last-Event-ID` resume, retry hints, bounded buffering.
-- Per-connection and global connection caps; graceful shutdown drains sockets.
-- A `hephos` CLI (first cut): `hephos new` (scaffold an app from the template),
-  `hephos routes` (list the route table) — agent-run-ready commands.
+- ✅ SSE maturity: `Last-Event-ID` resume, retry hints, bounded buffering.
+- ✅ Per-connection and global connection caps; graceful shutdown drains sockets (`ConnectionCap`).
+- ✅ A `hephos` CLI: `hephos new` (scaffold a canonical AGENTS.md-compliant application),
+  `hephos routes` (statically scan route tables with table and JSON formatting), and
+  `Router::entries` dynamic route reflection.
 
 **Explicitly not yet.** WebSocket pub/sub fan-out across instances; a CLI plugin
 system.
 
-**Acceptance.** Tests prove heartbeat/idle-timeout, oversized-message rejection,
-and disconnect cleanup; `hephos new` produces an app that passes `make ci`.
+**Acceptance (met).** Tests prove heartbeat/idle-timeout, oversized-message rejection,
+and disconnect cleanup; `hephos new` produces an app that passes `make ci`; `hephos routes`
+lists all routes in example projects.
 
 **Deps.** a small CLI arg parser (`clap`) for the `hephos` binary — justified: the
 CLI is a distinct, agent-facing surface.

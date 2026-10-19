@@ -3,7 +3,28 @@
 All notable changes to Hephos are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer.
 
-## [Unreleased]
+## [0.3.0] - 2026-10-19
+
+### Added
+- **`hephos` CLI (`crates/hephos-cli`)**:
+  - `hephos new <name>` scaffolds a canonical AGENTS.md-compliant project structure (`Cargo.toml`, `src/main.rs`, `src/state.rs`, `src/api.rs`, `src/api/hello.rs`, `src/domain.rs`, `src/domain/hello.rs`, `src/services.rs`, `src/services/hello.rs`, `src/tests.rs`) with valid Rust crate name verification and offline local path override support (`--local-path`).
+  - `hephos routes [path]` inspects route tables statically with tabular and `--json` formatting, listing methods, route paths, and handler function names.
+- **Dynamic Route Reflection (`Router::entries`)**:
+  - Added `RouteEntry { method, path }` to `hephos-core::router` and re-exported in `hephos_core::*` and `hephos::*`.
+  - `Router::entries(&self)` reflects registered routes across all HTTP verbs (`GET`, `POST`, `PUT`, `PATCH`, `DELETE`) through `merge` and `nest` operations.
+- **Connection Lifecycle & Caps (`ConnectionCap`, `ConnectionGuard`)**:
+  - Global and per-route connection concurrency limits via `ConnectionCap`.
+  - Graceful connection draining with configurable timeout (`drain()`) on shutdown.
+  - Probe endpoints (`/health`, `/ready`) are unconditionally exempted from connection limits.
+- **WebSocket Hardening (`hephos-core::ws`)**:
+  - `WsUpgrade` extractor with handshake validation and `on_upgrade` callback.
+  - Configurable message limits (`max_message_size`, `max_frame_size`).
+  - Heartbeat / ping-pong tracking and idle timeouts.
+  - Clean close semantics and close frame helpers (`CloseFrame::normal`, `CloseFrame::going_away`).
+- **SSE Maturity (`hephos-core::sse`)**:
+  - `Last-Event-ID` extractor supporting both `Last-Event-ID` HTTP header and `last_event_id` query parameter fallback.
+  - Typed and untyped last event ID parsing (`parse_id::<T>()`).
+  - `SseEvent` constructors supporting `event`, `data`, `id`, `retry`, and `comment`.
 
 ### Changed
 - **Folder and Files Architecture Modularization**:
@@ -15,7 +36,7 @@ All notable changes to Hephos are recorded here. Format follows
   `CLAUDE.md` is now a symlink to `AGENTS.md`, so tools that auto-load either name get the
   doctrine with no duplicated source of truth. All references updated across the repo.
 
-### Added (0.2.0 — observability & operability)
+## [0.2.0] - 2026-10-19
 - **OpenTelemetry & OTLP export in the standard stack**: integrated `opentelemetry`, `opentelemetry-otlp`,
   `opentelemetry-appender-tracing`, and `tracing-opentelemetry`. Standard OTLP HTTP transport exports
   logs and metrics by default when configured via `HEPHOS_OTLP_ENDPOINT` (or `OTEL_EXPORTER_OTLP_ENDPOINT`)
