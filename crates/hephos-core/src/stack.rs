@@ -29,6 +29,7 @@ use tracing::Instrument;
 use uuid::Uuid;
 
 use crate::config::RateLimitConfig;
+use crate::conn::ConnectionCap;
 use crate::ctx::RequestId;
 use crate::error::Error;
 use crate::identity::Identity;
@@ -44,6 +45,7 @@ pub(crate) struct StackConfig {
     pub cors_origins: Option<Vec<String>>,
     pub rate_limit: Option<RateLimitConfig>,
     pub concurrency_limit: Option<usize>,
+    pub connection_cap: Option<ConnectionCap>,
     pub metrics: RedMetrics,
 }
 
@@ -56,6 +58,7 @@ impl Default for StackConfig {
             cors_origins: None,
             rate_limit: None,
             concurrency_limit: None,
+            connection_cap: None,
             metrics: RedMetrics::new(),
         }
     }
@@ -119,6 +122,12 @@ where
         });
         let layer = GovernorLayer::new(gov_conf).error_handler(on_governor_error);
         app_router.layer(layer)
+    } else {
+        app_router
+    };
+
+    let app_router = if let Some(ref cap) = config.connection_cap {
+        app_router.layer(cap.layer())
     } else {
         app_router
     };

@@ -72,6 +72,8 @@ pub struct App<S> {
     readiness: Option<ReadinessCheck>,
     pub(crate) rate_limit: Option<RateLimitConfig>,
     pub(crate) concurrency_limit: Option<usize>,
+    pub(crate) max_connections: Option<usize>,
+    pub(crate) connection_caps: Vec<crate::conn::ConnectionCap>,
     pub(crate) otlp_endpoint: Option<String>,
     pub(crate) traces_enabled: Option<bool>,
     pub(crate) metrics: Option<crate::telemetry::RedMetrics>,
@@ -89,6 +91,8 @@ where
             readiness: None,
             rate_limit: None,
             concurrency_limit: None,
+            max_connections: None,
+            connection_caps: Vec::new(),
             otlp_endpoint: None,
             traces_enabled: None,
             metrics: None,
@@ -153,6 +157,22 @@ where
         self
     }
 
+    /// Configure maximum concurrent connections and global connection capping.
+    ///
+    /// Excess connections are rejected with `503 Service Unavailable`.
+    /// Overrides environment variable `HEPHOS_MAX_CONNECTIONS`.
+    /// Probes (`/health`, `/ready`) are never connection-capped.
+    pub fn max_connections(mut self, limit: usize) -> Self {
+        self.max_connections = Some(limit);
+        self
+    }
+
+    /// Register an external [`crate::conn::ConnectionCap`] to be tracked and drained during graceful shutdown.
+    pub fn connection_cap(mut self, cap: crate::conn::ConnectionCap) -> Self {
+        self.connection_caps.push(cap);
+        self
+    }
+
     /// Configure the OTLP exporter endpoint (e.g. `http://localhost:4318`).
     ///
     /// When configured, metrics and logs are exported via standard OTLP HTTP.
@@ -205,6 +225,8 @@ where
         let shutdown = CancellationToken::new();
         let rate_limit = self.rate_limit.or(config.rate_limit);
         let concurrency_limit = self.concurrency_limit.or(config.concurrency_limit);
+        let max_connections = self.max_connections.or(config.max_connections);
+        let global_cap = max_connections.map(crate::conn::ConnectionCap::new);
         let metrics = self.metrics.unwrap_or_default();
         let App {
             state,
@@ -213,6 +235,8 @@ where
             readiness,
             rate_limit: _,
             concurrency_limit: _,
+            max_connections: _,
+            connection_caps,
             otlp_endpoint: _,
             traces_enabled: _,
             metrics: _,
@@ -237,6 +261,7 @@ where
             cors_origins: config.cors_origins.clone(),
             rate_limit,
             concurrency_limit,
+            connection_cap: global_cap.clone(),
             metrics,
         };
         let probe_router = axum::Router::new()
@@ -275,10 +300,22 @@ where
             .await
             .map_err(|e| Error::internal(format!("serve: {e}")))?;
 
-        // Tasks were cancelled by the shutdown token; drain them against a single
-        // shared deadline (so N stuck tasks cost one deadline, not N), and surface
-        // panics rather than swallowing them.
+        // Drain active long-lived connections (WebSockets, SSE) and background tasks against
+        // a single shared deadline (so N stuck tasks/sockets cost one deadline, not N).
         let deadline = tokio::time::Instant::now() + DRAIN_DEADLINE;
+        if let Some(ref cap) = global_cap {
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if let Err(error) = cap.drain(remaining).await {
+                tracing::warn!(%error, "global connections did not finish within the drain deadline");
+            }
+        }
+        for cap in connection_caps {
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if let Err(error) = cap.drain(remaining).await {
+                tracing::warn!(%error, "connection cap did not finish within the drain deadline");
+            }
+        }
+
         for handle in handles {
             match tokio::time::timeout_at(deadline, handle).await {
                 Ok(Ok(())) => {}

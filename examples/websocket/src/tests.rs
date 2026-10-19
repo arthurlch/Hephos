@@ -87,3 +87,61 @@ async fn protected_ws_upgrade_handshake_succeeds_with_query_token() {
     let res = client.send_upgrade(req).await;
     assert_eq!(res.status(), 101);
 }
+
+/// Saturated connection cap rejects WebSocket upgrades with 503 Service Unavailable
+/// before establishing any connection or protocol switch.
+#[tokio::test]
+async fn ws_upgrade_exceeding_connection_cap_is_rejected_with_503() {
+    let client = TestClient::with_connection_cap(api::routes(), AppState::init().await.unwrap(), 1);
+
+    // First upgrade takes the 1 available connection slot
+    let req1 = Request::builder()
+        .uri("/ws")
+        .header("connection", "upgrade")
+        .header("upgrade", "websocket")
+        .header("sec-websocket-version", "13")
+        .header("sec-websocket-key", "dGhlIHNhbXBsZSBub25jZQ==")
+        .body(Body::empty())
+        .unwrap();
+
+    let res1 = client.send_upgrade(req1).await;
+    assert_eq!(res1.status(), 101);
+
+    // Second upgrade attempt is immediately rejected with 503
+    let req2 = Request::builder()
+        .uri("/ws")
+        .header("connection", "upgrade")
+        .header("upgrade", "websocket")
+        .header("sec-websocket-version", "13")
+        .header("sec-websocket-key", "dGhlIHNhbXBsZSBub25jZQ==")
+        .body(Body::empty())
+        .unwrap();
+
+    let res2 = client.send_upgrade(req2).await;
+    assert_eq!(res2.status(), 503);
+}
+
+/// Active WebSocket connections are tracked by the ConnectionCap and drain cleanly on disconnect.
+#[tokio::test]
+async fn ws_connection_draining_tracks_active_sockets() {
+    let cap = hephos::ConnectionCap::new(2);
+    let app = hephos::App::new(AppState::init().await.unwrap())
+        .routes(api::routes().connection_cap(cap.clone()));
+    let client = TestClient::from_app(app);
+
+    let req = Request::builder()
+        .uri("/ws")
+        .header("connection", "upgrade")
+        .header("upgrade", "websocket")
+        .header("sec-websocket-version", "13")
+        .header("sec-websocket-key", "dGhlIHNhbXBsZSBub25jZQ==")
+        .body(Body::empty())
+        .unwrap();
+
+    let res = client.send_upgrade(req).await;
+    assert_eq!(res.status(), 101);
+
+    // Active connection is tracked
+    assert_eq!(cap.active(), 1);
+    drop(res);
+}

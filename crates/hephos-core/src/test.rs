@@ -103,6 +103,14 @@ impl TestClient {
         Self::from_app(App::new(state).routes(router).concurrency_limit(limit))
     }
 
+    /// Build a client with explicit connection capping.
+    pub fn with_connection_cap<S>(router: Router<S>, state: S, limit: usize) -> Self
+    where
+        S: Clone + Send + Sync + 'static,
+    {
+        Self::from_app(App::new(state).routes(router).max_connections(limit))
+    }
+
     /// Build a client with explicit RED metrics instruments.
     pub fn with_metrics<S>(
         router: Router<S>,
@@ -124,6 +132,9 @@ impl TestClient {
         }
         if let Some(limit) = app.concurrency_limit {
             config.concurrency_limit = Some(limit);
+        }
+        if let Some(limit) = app.max_connections {
+            config.connection_cap = Some(crate::conn::ConnectionCap::new(limit));
         }
         if let Some(metrics) = &app.metrics {
             config.metrics = metrics.clone();
