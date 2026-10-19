@@ -47,6 +47,10 @@ pub mod ws;
 /// The blessed server-sent-events / streaming primitives.
 pub mod sse;
 
+/// The blessed connection tracking, concurrency caps, and graceful draining primitives.
+pub mod conn;
+pub use conn::{ConnectionCap, ConnectionGuard};
+
 /// Lower-level HTTP primitives for the handler escape hatches (raw bodies, request
 /// headers, custom responses) — so an app reaches for these, not `axum` directly. See
 /// `CONVENTIONS.md §2.13`. The canonical `Json`/`Path`/`Query` surface stays in the

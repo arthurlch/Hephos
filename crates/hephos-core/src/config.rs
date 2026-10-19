@@ -21,6 +21,7 @@ use crate::error::{Error, Result};
 /// | `HEPHOS_RATE_LIMIT_RPS`   | *(unset)*      | Quota replenishment in requests/sec per IP. Unset = disabled. |
 /// | `HEPHOS_RATE_LIMIT_BURST` | *(same as RPS)*| Maximum burst capacity per IP. |
 /// | `HEPHOS_CONCURRENCY_LIMIT`| *(unset)*      | Max concurrent in-flight requests before load shedding (503). |
+/// | `HEPHOS_MAX_CONNECTIONS`  | *(unset)*      | Max concurrent active connections before rejection (503). |
 /// | `HEPHOS_OTLP_ENDPOINT`    | *(unset)*      | OTLP HTTP collector endpoint (e.g. `http://localhost:4318`). |
 /// | `HEPHOS_TRACES`           | `off`          | Export distributed traces via OTLP (beta upstream, gated). |
 // `#[non_exhaustive]`: the framework-config surface grows as new knobs are added, and a
@@ -50,6 +51,9 @@ pub struct Config {
     /// Maximum concurrent in-flight requests before load shedding triggers. `None`
     /// disables concurrency limits and load shedding (the default).
     pub concurrency_limit: Option<usize>,
+    /// Maximum concurrent active connections allowed before new connections are rejected.
+    /// `None` disables the global connection cap (the default).
+    pub max_connections: Option<usize>,
     /// OpenTelemetry collector endpoint for OTLP export (`HEPHOS_OTLP_ENDPOINT`).
     pub otlp_endpoint: Option<String>,
     /// Whether OpenTelemetry trace export is enabled (`HEPHOS_TRACES`).
@@ -94,6 +98,7 @@ struct RawEnv<'a> {
     rate_limit_rps: Option<&'a str>,
     rate_limit_burst: Option<&'a str>,
     concurrency_limit: Option<&'a str>,
+    max_connections: Option<&'a str>,
     otlp_endpoint: Option<&'a str>,
     traces: Option<&'a str>,
 }
@@ -109,6 +114,7 @@ impl Config {
         let rate_limit_rps = std::env::var("HEPHOS_RATE_LIMIT_RPS").ok();
         let rate_limit_burst = std::env::var("HEPHOS_RATE_LIMIT_BURST").ok();
         let concurrency_limit = std::env::var("HEPHOS_CONCURRENCY_LIMIT").ok();
+        let max_connections = std::env::var("HEPHOS_MAX_CONNECTIONS").ok();
         let otlp_endpoint = std::env::var("HEPHOS_OTLP_ENDPOINT")
             .or_else(|_| std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT"))
             .ok();
@@ -126,6 +132,7 @@ impl Config {
             rate_limit_rps: rate_limit_rps.as_deref(),
             rate_limit_burst: rate_limit_burst.as_deref(),
             concurrency_limit: concurrency_limit.as_deref(),
+            max_connections: max_connections.as_deref(),
             otlp_endpoint: otlp_endpoint.as_deref(),
             traces: traces.as_deref(),
         })
@@ -241,6 +248,23 @@ impl Config {
             None => None,
         };
 
+        let max_connections = match env.max_connections {
+            Some(value) => {
+                let limit = value.parse::<usize>().map_err(|_| {
+                    Error::invalid(format!(
+                        "HEPHOS_MAX_CONNECTIONS must be a positive integer: {value}"
+                    ))
+                })?;
+                if limit == 0 {
+                    return Err(Error::invalid(
+                        "HEPHOS_MAX_CONNECTIONS must be greater than zero",
+                    ));
+                }
+                Some(limit)
+            }
+            None => None,
+        };
+
         let otlp_endpoint = env.otlp_endpoint.and_then(|value| {
             let trimmed = value.trim();
             (!trimmed.is_empty()).then(|| trimmed.to_string())
@@ -260,6 +284,7 @@ impl Config {
             cors_origins,
             rate_limit,
             concurrency_limit,
+            max_connections,
             otlp_endpoint,
             traces_enabled,
         })
@@ -305,6 +330,7 @@ mod tests {
             rate_limit_rps: Some("100"),
             rate_limit_burst: Some("250"),
             concurrency_limit: Some("64"),
+            max_connections: Some("128"),
             otlp_endpoint: Some("http://localhost:4318"),
             traces: Some("true"),
         })
@@ -332,6 +358,7 @@ mod tests {
             })
         );
         assert_eq!(config.concurrency_limit, Some(64));
+        assert_eq!(config.max_connections, Some(128));
         assert_eq!(
             config.otlp_endpoint.as_deref(),
             Some("http://localhost:4318")
@@ -481,5 +508,35 @@ mod tests {
         assert_ne!(LogFormat::Pretty, LogFormat::Json);
         assert_eq!(format!("{:?}", LogFormat::Json), "Json");
         assert_eq!(format!("{:?}", LogFormat::Pretty), "Pretty");
+    }
+
+    #[test]
+    fn parses_valid_max_connections() {
+        let config = Config::parse(RawEnv {
+            max_connections: Some("500"),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(config.max_connections, Some(500));
+    }
+
+    #[test]
+    fn rejects_invalid_max_connections() {
+        assert!(matches!(
+            Config::parse(RawEnv {
+                max_connections: Some("zero"),
+                ..Default::default()
+            })
+            .unwrap_err(),
+            Error::Invalid(_)
+        ));
+        assert!(matches!(
+            Config::parse(RawEnv {
+                max_connections: Some("0"),
+                ..Default::default()
+            })
+            .unwrap_err(),
+            Error::Invalid(_)
+        ));
     }
 }

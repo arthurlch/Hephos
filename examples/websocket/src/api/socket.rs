@@ -24,22 +24,26 @@ async fn verify_token(token: String) -> Result<Identity> {
     }
 }
 
-/// Public WebSocket connection with default limits and heartbeats.
-pub async fn connect(ctx: Ctx, upgrade: WebSocketUpgrade) -> Response {
+/// Public WebSocket connection with default limits, heartbeats, and connection tracking.
+pub async fn connect(ctx: Ctx, guard: ConnectionGuard, upgrade: WebSocketUpgrade) -> Response {
     let config = WsConfig::default();
     config
         .apply(upgrade)
-        .on_upgrade(move |socket| handle(ctx, socket, config))
+        .on_upgrade(move |socket| handle(ctx, socket, config, guard))
 }
 
 /// Protected WebSocket connection requiring authentication on upgrade.
 /// Accepts credentials via `Authorization: Bearer <token>` header or `?token=<token>` query param.
-pub async fn connect_protected(ctx: Ctx, upgrade: WebSocketUpgrade) -> Result<Response> {
+pub async fn connect_protected(
+    ctx: Ctx,
+    guard: ConnectionGuard,
+    upgrade: WebSocketUpgrade,
+) -> Result<Response> {
     ctx.require_user()?;
     let config = WsConfig::default();
     Ok(config
         .apply(upgrade)
-        .on_upgrade(move |socket| handle(ctx, socket, config)))
+        .on_upgrade(move |socket| handle(ctx, socket, config, guard)))
 }
 
 /// One connection, one loop, no spawned tasks. The socket is split so reads and
@@ -48,7 +52,8 @@ pub async fn connect_protected(ctx: Ctx, upgrade: WebSocketUpgrade) -> Result<Re
 /// (`None`/`Err` from the stream, or a failed `sink.send`), idle timeout, or a receive error.
 /// Backpressure is the awaited `sink.send`: when the client cannot keep up, the send
 /// blocks the loop, which stops reading — flow control without an unbounded queue.
-async fn handle(ctx: Ctx, socket: WebSocket, config: WsConfig) {
+/// Holding `_guard` tracks this socket and ensures graceful draining on shutdown.
+async fn handle(ctx: Ctx, socket: WebSocket, config: WsConfig, _guard: ConnectionGuard) {
     let (mut sink, mut stream) = socket.split();
     let mut heartbeat = WsHeartbeat::from_config(&config);
 

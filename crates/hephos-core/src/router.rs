@@ -153,6 +153,14 @@ where
         self
     }
 
+    /// Apply a [`crate::conn::ConnectionCap`] to every route in this router.
+    ///
+    /// Excess connections arriving at these routes are rejected with `503 Service Unavailable`.
+    pub fn connection_cap(mut self, cap: crate::conn::ConnectionCap) -> Self {
+        self.inner = self.inner.layer(cap.layer());
+        self
+    }
+
     fn method(mut self, path: &str, method: routing::MethodRouter<S>) -> Self {
         assert!(
             !RESERVED_PROBE_PATHS.contains(&path),
