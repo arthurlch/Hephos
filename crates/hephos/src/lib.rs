@@ -42,7 +42,10 @@ pub mod prelude {
     };
 
     #[cfg(feature = "db")]
-    pub use hephos_db::{Db, Tx};
+    pub use hephos_db::{
+        Db, Job, JobOptions, JobRegistry, JobState, JobWorker, Jobs, Outbox, OutboxDrain,
+        OutboxEntry, OutboxState, Tx,
+    };
 
     #[cfg(feature = "agent")]
     pub use hephos_agent::{Agent, Limits, Model, Tool};
