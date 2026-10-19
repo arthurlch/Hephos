@@ -3,9 +3,17 @@ mod mcp;
 mod services;
 mod tools;
 
+#[cfg(test)]
+mod tests;
+
 use hephos::prelude::*;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    mcp::server::serve().await
+    if std::env::var("HEPHOS_MCP_HTTP").is_ok() {
+        let app = App::new(()).routes(mcp::server::router());
+        app.run().await
+    } else {
+        mcp::server::serve().await
+    }
 }

@@ -29,7 +29,10 @@ pub use agent::{Agent, Limits, parse_tool_calls};
 pub use message::{Message, Role, TextStream};
 pub use model::{Completion, Model};
 pub use providers::{Anthropic, OpenAI};
-pub use tool::{Tool, ToolCall, ToolResult, ToolSchema, schema_for as tool_schema};
+pub use tool::{
+    Tool, ToolCall, ToolDefinition, ToolRegistry, ToolResult, ToolSchema, Tools,
+    schema_for as tool_schema,
+};
 
 /// Provider clients.
 pub mod providers;

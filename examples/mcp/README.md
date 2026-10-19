@@ -16,8 +16,9 @@ src/
 Hephos does not define a protocol. `hephos-mcp` wraps rmcp: it registers each Hephos
 `Tool` as an MCP tool whose input schema is the tool's derived `schemars` schema,
 and serves over stdio (local) or Streamable HTTP (networked — the current MCP
-transport that replaced HTTP+SSE). The `serve_stdio` / Streamable HTTP wiring is
-marked `// BOUNDARY:` in `crates/hephos-mcp`; this example shows the intended call
-site.
+transport that replaced HTTP+SSE). External MCP servers can also be consumed as
+typed in-process agent tools via `McpClient`.
 
 Run (as a local MCP server over stdio): `cargo run -p example-mcp`
+Run (as a networked Streamable HTTP server): `HEPHOS_MCP_HTTP=1 cargo run -p example-mcp`
+Inspect OpenAPI 3.1.0 schema: `cargo run -p hephos-cli -- openapi --path examples/mcp`

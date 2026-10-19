@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::{Args, Parser, Subcommand};
-use hephos_cli::{format_json, format_table, scaffold_app, scan_routes};
+use hephos_cli::{format_json, format_table, generate_openapi, scaffold_app, scan_routes};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -22,6 +22,9 @@ enum Command {
 
     /// Inspect and print the application's route table.
     Routes(RoutesArgs),
+
+    /// Generate and print the OpenAPI 3.1.0 specification for the application.
+    Openapi(OpenapiArgs),
 }
 
 #[derive(Args, Debug)]
@@ -49,6 +52,21 @@ struct RoutesArgs {
     json: bool,
 }
 
+#[derive(Args, Debug)]
+struct OpenapiArgs {
+    /// Path to the application root directory (default: current directory).
+    #[arg(default_value = ".")]
+    path: PathBuf,
+
+    /// Title of the API.
+    #[arg(long, default_value = "Hephos Application")]
+    title: String,
+
+    /// Version of the API.
+    #[arg(long, default_value = "0.1.0")]
+    version: String,
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -74,6 +92,12 @@ fn main() -> Result<()> {
             } else {
                 print!("{}", format_table(&routes));
             }
+            Ok(())
+        }
+        Command::Openapi(args) => {
+            let routes = scan_routes(&args.path)?;
+            let doc = generate_openapi(&routes, &args.title, &args.version);
+            println!("{}", serde_json::to_string_pretty(&doc)?);
             Ok(())
         }
     }

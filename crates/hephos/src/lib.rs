@@ -48,5 +48,11 @@ pub mod prelude {
     };
 
     #[cfg(feature = "agent")]
-    pub use hephos_agent::{Agent, Limits, Model, Tool};
+    pub use hephos_agent::{
+        Agent, Limits, Model, Tool, ToolCall, ToolDefinition, ToolRegistry, ToolResult, ToolSchema,
+        Tools,
+    };
+
+    #[cfg(feature = "mcp")]
+    pub use hephos_mcp::{McpClient, McpServer, RegisteredMcpTool};
 }

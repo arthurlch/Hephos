@@ -3,6 +3,23 @@
 All notable changes to Hephos are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer.
 
+## [0.6.0] - 2026-10-20
+
+### Added
+- **Unified Tools & MCP Architecture (`hephos-agent::tool`, `hephos-mcp`)**:
+  - One tool definition (`hephos_agent::Tool`) exposed to both in-process `Agent` and external MCP clients via stdio or Streamable HTTP.
+  - Shared `Tools` collection and `ToolRegistry` with `ToolDefinition` erased wrappers supporting both statically typed tools and dynamic closures.
+  - Tool schemas generated via `schemars` (`ToolSchema`) with owned name, description, and JSON schema strings.
+  - `McpServer` implementing `rmcp::ServerHandler` over stdio (`serve_stdio`), arbitrary async read/write pairs (`serve_io`), and Streamable HTTP (`into_router`).
+  - `McpClient` providing `to_tools` and `to_tool` enabling in-process agents to seamlessly consume external MCP servers as native tools.
+- **Router Services & OpenAPI 3.1 (`hephos-core`, `hephos-cli`)**:
+  - `Router::nest_service` mounting generic Tower / Axum services (such as `rmcp::transport::StreamableHttpService`) into the Hephos routing tree.
+  - Runtime OpenAPI 3.1.0 generator via `Router::openapi(title, version)` reflecting routes, HTTP methods, and parameter paths.
+  - Static OpenAPI generator via `hephos openapi` CLI command inspecting route definitions without executing server binaries.
+- **MCP Example & Integration Tests (`examples/mcp`)**:
+  - `examples/mcp` demonstrating dual-consumption of the same `SearchUsers` tool by both in-process `Agent` and external MCP clients.
+  - Comprehensive end-to-end integration tests in `examples/mcp/src/tests.rs` verifying route composition, OpenAPI validation, in-process agent execution, duplex-channel MCP client execution, and agent consumption of client tools.
+
 ## [0.5.0] - 2026-10-19
 
 ### Added

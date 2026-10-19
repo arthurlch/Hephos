@@ -7,5 +7,5 @@
 pub mod routes;
 pub mod scaffold;
 
-pub use routes::{DiscoveredRoute, format_json, format_table, scan_routes};
+pub use routes::{DiscoveredRoute, format_json, format_table, generate_openapi, scan_routes};
 pub use scaffold::scaffold_app;

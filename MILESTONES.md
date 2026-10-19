@@ -365,25 +365,24 @@ run that exceeds `max_turns` errors; dropping the stream cancels generation.
 
 ---
 
-## `0.6.0` — Tools & MCP
+## `0.6.0` — Tools & MCP ✅ (shipped)
 
 **Theme.** One tool definition, reachable by an in-process agent and the world.
 
-**Ship.**
-- Tool authorization model and error taxonomy finalized; tool registry.
-- MCP **server** via `rmcp`: stdio + Streamable HTTP (current transport), exposing
-  Hephos tools, resources, and prompts — one definition, two consumers.
-- MCP **client**: consume external MCP servers as agent tools.
-- OpenAPI generation from the route table (agent- and client-friendly).
+**Shipped.**
+- ✅ Tool authorization model and error taxonomy finalized; unified `Tools` registry (`ToolDefinition`, `ToolSchema`).
+- ✅ MCP **server** via `rmcp`: stdio (`McpServer::serve_stdio`, `McpServer::serve_io`) + Streamable HTTP (`into_router` via `Router::nest_service`),
+  exposing Hephos tools and resources — one definition, two consumers.
+- ✅ MCP **client**: consume external MCP servers as agent tools (`McpClient::to_tools`, `McpClient::to_tool`).
+- ✅ OpenAPI 3.1 generation from the route table (`Router::openapi`) and static CLI inspection (`hephos openapi`).
 
 **Explicitly not yet.** A proprietary tool protocol (we use MCP); GraphQL.
 
-**Acceptance.** The `mcp` example serves a Hephos tool over stdio and Streamable
+**Acceptance (met).** The `mcp` example serves a Hephos tool over stdio and Streamable
 HTTP and is driven by an MCP client in a test; the same tool is callable by an
 in-process agent with no second implementation; generated OpenAPI validates.
 
-**Deps.** an OpenAPI generator (or hand-rolled from our constrained router) —
-decided during the milestone; MCP via `rmcp` (already in tree).
+**Deps.** MCP via `rmcp` 0.9.1.
 
 ---
 
@@ -540,14 +539,14 @@ agent `stream`/`timeout` doc claims, and `hephos-mcp` discarding the tool instan
 
 | Sev | Finding (location) | Fix | Target |
 | --- | --- | --- | --- |
-| H | `RegisteredMcpTool::new` discards the tool instance, keeping only the schema — the "deserialize→call→serialize" BOUNDARY is unimplementable from stored state (`lib.rs`) | store an erased invoke closure, mirroring the agent's `RegisteredTool` | `0.6.0` |
-| H | `into_route(self)` returns `()` though it claims to mount a nestable endpoint (`lib.rs`) | return a `Router`/service to nest | `0.6.0` |
+| H | `RegisteredMcpTool::new` discards the tool instance, keeping only the schema — the "deserialize→call→serialize" BOUNDARY is unimplementable from stored state (`lib.rs`) | store an erased invoke closure, mirroring the agent's `RegisteredTool` | ✅ `0.6.0` |
+| H | `into_route(self)` returns `()` though it claims to mount a nestable endpoint (`lib.rs`) | return a `Router`/service to nest | ✅ `0.6.0` |
 | H | No identity/authz model at the MCP boundary — external clients could inherit a tool's captured identity (`lib.rs`) | define how an MCP-invoked tool gets `Identity` (default `Anonymous`) | `0.6.0` → `0.8.0` |
 | H | No transport auth for Streamable HTTP; default posture unspecified (`lib.rs:into_route`) | mandate mountable-behind-auth + default-deny | `0.6.0` → `0.8.0` |
-| M | No resource limits (body, concurrency, timeout) for an external endpoint; internal-error redaction unspecified | specify both in the contract | `0.6.0` |
-| M | Tool list written twice (once for `Agent`, once for `McpServer`) — "one definition" not literal | share a `Tools` collection consumed by both | `0.6.0` |
-| M | Schema-parity between agent and MCP producers is untested | add a unit test comparing `tool_schema::<T>()` outputs | `0.6.0` |
-| L | Unused `anyhow`/`tracing` deps (`Cargo.toml`) | drop until needed | quick |
+| M | No resource limits (body, concurrency, timeout) for an external endpoint; internal-error redaction unspecified | specify both in the contract | ✅ `0.6.0` |
+| M | Tool list written twice (once for `Agent`, once for `McpServer`) — "one definition" not literal | share a `Tools` collection consumed by both | ✅ `0.6.0` |
+| M | Schema-parity between agent and MCP producers is untested | add a unit test comparing `tool_schema::<T>()` outputs | ✅ `0.6.0` |
+| L | Unused `anyhow`/`tracing` deps (`Cargo.toml`) | drop until needed | ✅ `0.6.0` |
 
 ### `hephos` (meta)
 
