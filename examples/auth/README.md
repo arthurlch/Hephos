@@ -17,7 +17,7 @@ src/
   services/auth.rs         register, login, refresh, logout, authenticate (the seam
                            resolver: JWT or API key), mint/revoke API keys.
   services/users.rs        profile lookup.
-  token.rs                 JWT issue/verify (keyring) + opaque refresh-token and
+  services/token.rs        JWT issue/verify (keyring) + opaque refresh-token and
                            API-key minting (hashed).
   api/auth.rs              public register/login/refresh/logout.
   api/users.rs             protected routes: GET /me, admin-only GET /users.

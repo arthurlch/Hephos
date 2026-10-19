@@ -6,6 +6,10 @@ All notable changes to Hephos are recorded here. Format follows
 ## [Unreleased]
 
 ### Changed
+- **Folder and Files Architecture Modularization**:
+  - Organized `crates/hephos-core/src/` real-time, streaming, and connection-lifecycle primitives (`ws`, `sse`, `conn`) into a dedicated `transport/` module (`crates/hephos-core/src/transport/`), while preserving 100% backward compatibility for all crate-level re-exports (`hephos_core::{ws, sse, conn}`, `hephos::{ws, sse, conn}`, and `hephos::prelude`).
+  - Added dedicated integration test suites `crates/hephos-core/tests/ws.rs` and `crates/hephos-core/tests/sse.rs` to accompany `crates/hephos-core/tests/conn.rs`.
+  - Cleaned up `examples/` directory architecture to strictly conform to `AGENTS.md § 1`: relocated loose `token.rs` in `examples/auth` into `services/token.rs`, and relocated loose `model.rs` in `examples/agent` and `examples/workflow` into `agents/model.rs`, eliminating loose source files at the example `src/` roots.
 - **Renamed `CLAUDE.md` → `AGENTS.md`** as the canonical, agent-agnostic operating
   manual (any coding agent — Claude, Gemini, Cursor, or a human — reads the same rules).
   `CLAUDE.md` is now a symlink to `AGENTS.md`, so tools that auto-load either name get the

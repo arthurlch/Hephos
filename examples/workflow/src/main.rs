@@ -1,6 +1,5 @@
 mod agents;
 mod domain;
-mod model;
 mod services;
 mod state;
 mod workflows;

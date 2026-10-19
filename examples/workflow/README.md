@@ -8,7 +8,7 @@ handling, and a cancellation checkpoint between steps.
 src/
   domain/account.rs      NewAccount, Account, Onboarded.
   services/accounts.rs   AccountService::register.
-  model.rs               ScriptedModel (offline Model, as in example-agent).
+  agents/model.rs        ScriptedModel (offline Model, as in example-agent).
   agents/welcome.rs      builds the welcome agent.
   workflows/onboarding.rs the workflow: register → checkpoint → welcome.
 ```

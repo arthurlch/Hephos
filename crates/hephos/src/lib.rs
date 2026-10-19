@@ -22,7 +22,7 @@
 pub use hephos_core::{
     App, CancellationToken, Config, ConnectionCap, ConnectionGuard, Ctx, Error, Event, Events,
     Identity, Json, LogFormat, Path, Principal, ProbeResponse, Query, RateLimitConfig, RedMetrics,
-    Result, Router, StatusCode, Task, conn, http, sse, telemetry, test, ws,
+    Result, Router, StatusCode, Task, conn, http, sse, telemetry, test, transport, ws,
 };
 
 #[cfg(feature = "db")]

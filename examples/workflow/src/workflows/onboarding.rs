@@ -1,8 +1,8 @@
 use hephos::prelude::*;
 
+use crate::agents::ScriptedModel;
 use crate::agents::welcome;
 use crate::domain::account::{Account, NewAccount, Onboarded};
-use crate::model::ScriptedModel;
 use crate::state::Ctx;
 
 /// Deterministic onboarding: register the account, then generate a welcome. Each
