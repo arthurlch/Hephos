@@ -173,7 +173,8 @@ impl Jobs {
 
     /// Idempotently create the `hephos_jobs` table and supporting indexes.
     pub async fn migrate(&self) -> Result<()> {
-        let ddl = r#"
+        let statements = [
+            r#"
             CREATE TABLE IF NOT EXISTS hephos_jobs (
                 id UUID PRIMARY KEY,
                 name TEXT NOT NULL,
@@ -189,25 +190,31 @@ impl Jobs {
                 recurring_interval_secs BIGINT,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-            );
-
+            )
+            "#,
+            r#"
             CREATE INDEX IF NOT EXISTS idx_hephos_jobs_ready
                 ON hephos_jobs (run_at ASC)
-                WHERE state = 'ready';
-
+                WHERE state = 'ready'
+            "#,
+            r#"
             CREATE INDEX IF NOT EXISTS idx_hephos_jobs_locked
                 ON hephos_jobs (locked_at)
-                WHERE state = 'running';
-
+                WHERE state = 'running'
+            "#,
+            r#"
             CREATE INDEX IF NOT EXISTS idx_hephos_jobs_dead_letter
                 ON hephos_jobs (created_at DESC)
-                WHERE state = 'dead_letter';
-        "#;
+                WHERE state = 'dead_letter'
+            "#,
+        ];
 
-        sqlx::query(ddl)
-            .execute(self.db.pool())
-            .await
-            .map_err(into_internal)?;
+        for stmt in statements {
+            sqlx::query(stmt)
+                .execute(self.db.pool())
+                .await
+                .map_err(into_internal)?;
+        }
 
         Ok(())
     }

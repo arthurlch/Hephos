@@ -90,7 +90,8 @@ impl Outbox {
 
     /// Idempotently create the `hephos_outbox` table and indexes.
     pub async fn migrate(&self) -> Result<()> {
-        let ddl = r#"
+        let statements = [
+            r#"
             CREATE TABLE IF NOT EXISTS hephos_outbox (
                 id UUID PRIMARY KEY,
                 event_type TEXT NOT NULL,
@@ -100,17 +101,21 @@ impl Outbox {
                 last_error TEXT,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 dispatched_at TIMESTAMPTZ
-            );
-
+            )
+            "#,
+            r#"
             CREATE INDEX IF NOT EXISTS idx_hephos_outbox_pending
                 ON hephos_outbox (created_at ASC)
-                WHERE state = 'pending';
-        "#;
+                WHERE state = 'pending'
+            "#,
+        ];
 
-        sqlx::query(ddl)
-            .execute(self.db.pool())
-            .await
-            .map_err(into_internal)?;
+        for stmt in statements {
+            sqlx::query(stmt)
+                .execute(self.db.pool())
+                .await
+                .map_err(into_internal)?;
+        }
 
         Ok(())
     }
