@@ -173,6 +173,11 @@ impl Jobs {
 
     /// Idempotently create the `hephos_jobs` table and supporting indexes.
     pub async fn migrate(&self) -> Result<()> {
+        sqlx::query("SELECT pg_advisory_lock(910248231)")
+            .execute(self.db.pool())
+            .await
+            .map_err(into_internal)?;
+
         let statements = [
             r#"
             CREATE TABLE IF NOT EXISTS hephos_jobs (
@@ -210,11 +215,18 @@ impl Jobs {
         ];
 
         for stmt in statements {
-            sqlx::query(stmt)
-                .execute(self.db.pool())
-                .await
-                .map_err(into_internal)?;
+            if let Err(e) = sqlx::query(stmt).execute(self.db.pool()).await {
+                let _ = sqlx::query("SELECT pg_advisory_unlock(910248231)")
+                    .execute(self.db.pool())
+                    .await;
+                return Err(into_internal(e));
+            }
         }
+
+        sqlx::query("SELECT pg_advisory_unlock(910248231)")
+            .execute(self.db.pool())
+            .await
+            .map_err(into_internal)?;
 
         Ok(())
     }
@@ -486,7 +498,7 @@ impl Jobs {
                 .map_err(into_internal)?;
         } else {
             let retry_at = OffsetDateTime::now_utc()
-                + time::Duration::seconds(backoff.as_secs().max(1) as i64);
+                + time::Duration::milliseconds(backoff.as_millis().max(1) as i64);
             let query = r#"
                 UPDATE hephos_jobs
                 SET state = 'ready',

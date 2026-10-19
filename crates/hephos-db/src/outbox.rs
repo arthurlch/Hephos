@@ -90,6 +90,11 @@ impl Outbox {
 
     /// Idempotently create the `hephos_outbox` table and indexes.
     pub async fn migrate(&self) -> Result<()> {
+        sqlx::query("SELECT pg_advisory_lock(910248232)")
+            .execute(self.db.pool())
+            .await
+            .map_err(into_internal)?;
+
         let statements = [
             r#"
             CREATE TABLE IF NOT EXISTS hephos_outbox (
@@ -111,11 +116,18 @@ impl Outbox {
         ];
 
         for stmt in statements {
-            sqlx::query(stmt)
-                .execute(self.db.pool())
-                .await
-                .map_err(into_internal)?;
+            if let Err(e) = sqlx::query(stmt).execute(self.db.pool()).await {
+                let _ = sqlx::query("SELECT pg_advisory_unlock(910248232)")
+                    .execute(self.db.pool())
+                    .await;
+                return Err(into_internal(e));
+            }
         }
+
+        sqlx::query("SELECT pg_advisory_unlock(910248232)")
+            .execute(self.db.pool())
+            .await
+            .map_err(into_internal)?;
 
         Ok(())
     }

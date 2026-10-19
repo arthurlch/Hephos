@@ -150,7 +150,7 @@ async fn jobs_retry_backoff_and_dead_letter() {
     );
 
     // Wait until run_at is in past
-    tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
 
     // Claim attempt 2
     let claimed2 = jobs
