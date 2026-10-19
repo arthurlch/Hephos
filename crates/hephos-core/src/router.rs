@@ -215,7 +215,7 @@ fn extract_credential(request: &axum::extract::Request) -> Option<String> {
 }
 
 /// Simple, allocation-friendly percent-decoding for query parameter credentials.
-fn percent_decode(input: &str) -> Option<String> {
+pub(crate) fn percent_decode(input: &str) -> Option<String> {
     if !input.contains('%') {
         return Some(input.to_string());
     }
