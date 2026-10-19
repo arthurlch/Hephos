@@ -1,12 +1,11 @@
 mod agents;
 mod domain;
-mod model;
 
 use futures::StreamExt;
 use hephos::prelude::*;
 
+use crate::agents::ScriptedModel;
 use crate::domain::report::Report;
-use crate::model::ScriptedModel;
 
 #[tokio::main]
 async fn main() -> Result<()> {

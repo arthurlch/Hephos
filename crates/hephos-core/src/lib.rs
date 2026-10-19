@@ -40,16 +40,19 @@ pub use axum::http::StatusCode;
 /// Re-export the cancellation primitive so apps never pull it in directly.
 pub use tokio_util::sync::CancellationToken;
 
+/// Real-time, streaming, and connection-lifecycle transports.
+pub mod transport;
+
 /// The blessed WebSocket primitives. Handlers use these; there is no other
 /// WebSocket surface.
-pub mod ws;
+pub use transport::ws;
 
 /// The blessed server-sent-events / streaming primitives.
-pub mod sse;
+pub use transport::sse;
 
-/// The blessed connection tracking, concurrency caps, and graceful draining primitives.
-pub mod conn;
 pub use conn::{ConnectionCap, ConnectionGuard};
+/// The blessed connection tracking, concurrency caps, and graceful draining primitives.
+pub use transport::conn;
 
 /// Lower-level HTTP primitives for the handler escape hatches (raw bodies, request
 /// headers, custom responses) — so an app reaches for these, not `axum` directly. See

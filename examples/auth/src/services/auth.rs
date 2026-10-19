@@ -13,8 +13,8 @@ use crate::domain::user::{
 use crate::repos::api_keys::ApiKeyRepo;
 use crate::repos::refresh_tokens::RefreshTokenRepo;
 use crate::repos::users::UserRepo;
+use crate::services::token;
 use crate::state::Ctx;
-use crate::token;
 
 // Refresh tokens are long-lived; rotation on every use keeps the window of any single
 // leaked token short even though the family can live this long.

@@ -11,7 +11,7 @@ else about the agent changes, which is the point of the `Model` abstraction.
 
 ```
 src/
-  model.rs           ScriptedModel: a Model implementation for offline runs.
+  agents/model.rs    ScriptedModel: a Model implementation for offline runs.
   domain/report.rs   Report: the structured-output type (JsonSchema).
   agents/report.rs   builds the Agent with system prompt + limits.
 ```

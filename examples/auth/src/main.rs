@@ -6,7 +6,6 @@ mod state;
 mod tasks;
 #[cfg(test)]
 mod tests;
-mod token;
 
 use hephos::prelude::*;
 
