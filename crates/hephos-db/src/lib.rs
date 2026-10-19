@@ -14,6 +14,12 @@ use hephos_core::{Error, Result};
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgPool, PgPoolOptions};
 
+pub mod jobs;
+pub mod outbox;
+
+pub use jobs::{Job, JobOptions, JobRegistry, JobState, JobWorker, Jobs};
+pub use outbox::{Outbox, OutboxDrain, OutboxEntry, OutboxState};
+
 /// Connection-pool tuning. Read from the environment by [`Db::connect_from_env`];
 /// bounded by default so a stuck query cannot exhaust the pool.
 ///
@@ -162,6 +168,16 @@ impl Db {
             .await
             .map_err(into_internal)?;
         Ok(())
+    }
+
+    /// Access the Postgres-backed durable job queue.
+    pub fn jobs(&self) -> Jobs {
+        Jobs::new(self.clone())
+    }
+
+    /// Access the transactional outbox handle.
+    pub fn outbox(&self) -> Outbox {
+        Outbox::new(self.clone())
     }
 }
 

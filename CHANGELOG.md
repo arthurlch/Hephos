@@ -3,6 +3,24 @@
 All notable changes to Hephos are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer.
 
+## [0.4.0] - 2026-10-19
+
+### Added
+- **Postgres-Backed Durable Job Queue (`hephos-db::jobs`)**:
+  - `Jobs` handle for enqueueing, claiming, completing, and retrying durable background jobs using Postgres as the single storage engine.
+  - Dedicated `hephos_jobs` schema with indexing for fast claims, visibility timeouts, and dead-letter retrieval.
+  - Exactly-once-effectively deduplication via `idempotency_key` (`ON CONFLICT (idempotency_key) DO UPDATE`).
+  - Worker pool (`JobWorker<S>`) implementing `hephos_core::Task<S>` for seamless integration with `App::task`.
+  - Immediate execution through Postgres `LISTEN/NOTIFY` on the `hephos_jobs` channel paired with fallback timer polling.
+  - Retries with exponential backoff (`base_backoff * 2^(attempts-1)`), visibility timeouts, orphan re-enqueue, and a dead-letter queue (`JobState::DeadLetter`) after exhausting `max_attempts`.
+  - Scheduled and recurring jobs (`JobOptions::delay`, `JobOptions::run_at`, `JobOptions::recurring`).
+- **Transactional Outbox Pattern (`hephos-db::outbox`)**:
+  - `Outbox` handle with `enqueue_tx` allowing atomic domain data modification and event publishing in the same SQL transaction.
+  - Dedicated `hephos_outbox` schema with indexing on pending events.
+  - `OutboxDrain<S>` implementing `hephos_core::Task<S>` for continuous, durable, at-least-once event delivery across application restarts and failures.
+- **Top-Level Re-Exports (`hephos::prelude`)**:
+  - Re-exported `Job`, `JobOptions`, `JobRegistry`, `JobState`, `JobWorker`, `Jobs`, `Outbox`, `OutboxDrain`, `OutboxEntry`, `OutboxState` in `hephos::prelude` when `feature = "db"` is active.
+
 ## [0.3.0] - 2026-10-19
 
 ### Added

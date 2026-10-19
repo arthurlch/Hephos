@@ -13,9 +13,13 @@ hephos-core = { workspace = true, features = ["sqlx"] }
 sqlx = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
-# For unique disposable-test-database names (see `test::TestDb`).
+# For unique disposable-test-database names (see `test::TestDb`) and job IDs.
 uuid = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+time = { workspace = true }
+futures = { workspace = true }
+tokio = { workspace = true }
 
 [dev-dependencies]
-tokio = { workspace = true }
 sqlx = { workspace = true }

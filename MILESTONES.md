@@ -318,23 +318,22 @@ CLI is a distinct, agent-facing surface.
 
 ---
 
-## `0.4.0` — Durable background jobs & scheduling
+## `0.4.0` — Durable background jobs & scheduling ✅ (shipped)
 
 **Theme.** Work that survives a restart, on the one database we already have.
 
-**Ship.**
-- Postgres-backed job queue **owned by Hephos** (a `jobs` table; polling + `LISTEN/NOTIFY`),
-  aligned to the existing `Task` API — no new infrastructure. (Prior art: `apalis`;
-  we stay Postgres-native and opinionated rather than taking a dependency.)
-- Retries with exponential backoff, dead-letter, idempotency keys, visibility
-  timeouts, orphan re-enqueue.
-- Scheduled/cron jobs on the same substrate.
-- **Transactional outbox** for events: durable, at-least-once delivery, drained by a
-  task — the additive upgrade the in-process bus always pointed at.
+**Shipped.**
+- ✅ Postgres-backed job queue **owned by Hephos** (`hephos_jobs` table; polling + `LISTEN/NOTIFY`),
+  aligned to the existing `Task` API — no new infrastructure.
+- ✅ Retries with exponential backoff, dead-letter queue, idempotency keys, visibility
+  timeouts, and orphan re-enqueue (`Jobs`, `JobWorker`).
+- ✅ Scheduled/recurring jobs on the same substrate (`JobOptions::delay`, `JobOptions::recurring`).
+- ✅ **Transactional outbox** for events: durable, at-least-once delivery, drained by
+  `OutboxDrain` task — atomic event writes within SQL transactions.
 
 **Explicitly not yet.** External brokers (Kafka/NATS); cross-language workers.
 
-**Acceptance.** A job survives a worker restart and runs exactly-once-effectively
+**Acceptance (met).** A job survives a worker restart and runs exactly-once-effectively
 (idempotency key); a failing job lands in dead-letter after N backed-off retries;
 an emitted event is delivered after a simulated crash between commit and dispatch.
 

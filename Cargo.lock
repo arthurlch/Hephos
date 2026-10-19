@@ -1047,8 +1047,12 @@ name = "hephos-db"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "futures",
  "hephos-core",
+ "serde",
+ "serde_json",
  "sqlx",
+ "time",
  "tokio",
  "tracing",
  "uuid",
