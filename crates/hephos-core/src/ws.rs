@@ -1,9 +1,9 @@
 //! WebSocket primitives, configuration, and connection hardening.
 //!
 //! Provides the blessed WebSocket surface:
-//! - Size bounds ([`WsConfig::max_message_size`], [`WsConfig::max_frame_size`]) to prevent memory exhaustion.
-//! - Heartbeat ping intervals and idle timeouts via [`WsHeartbeat`].
-//! - Clean close frame semantics ([`close_normal`], [`close_away`], [`close_policy`], [`close_size`]).
+//! - Size bounds ([`crate::ws::WsConfig::max_message_size`], [`crate::ws::WsConfig::max_frame_size`]) to prevent memory exhaustion.
+//! - Heartbeat ping intervals and idle timeouts via [`crate::ws::WsHeartbeat`].
+//! - Clean close frame semantics ([`crate::ws::close_normal`], [`crate::ws::close_away`], [`crate::ws::close_policy`], [`crate::ws::close_size`]).
 //! - The canonical split-loop backpressure pattern.
 
 use std::time::Duration;
