@@ -25,13 +25,11 @@ mod message;
 mod model;
 mod tool;
 
-pub use agent::{Agent, Limits};
+pub use agent::{Agent, Limits, parse_tool_calls};
 pub use message::{Message, Role, TextStream};
 pub use model::{Completion, Model};
+pub use providers::{Anthropic, OpenAI};
 pub use tool::{Tool, ToolCall, ToolResult, ToolSchema, schema_for as tool_schema};
 
 /// Provider clients.
-///
-/// BOUNDARY: each provider is a thin `reqwest` client against that vendor's HTTP
-/// API. The [`Model`] trait is the stable contract; provider structs implement it.
 pub mod providers;
