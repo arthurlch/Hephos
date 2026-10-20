@@ -16,6 +16,7 @@ members = [
     "examples/tools",
     "examples/workflow",
     "examples/mcp",
+    "examples/reference-app",
 ]
 
 [workspace.package]
@@ -75,6 +76,9 @@ rmcp = { version = "0.9", features = ["server", "client", "transport-io", "trans
 
 # cli
 clap = { version = "4", features = ["derive"] }
+
+# benchmarks
+criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
 
 # Faster edit→check→test loop for agents: line-tables-only debuginfo links much
 # faster than full debuginfo while keeping backtraces and line numbers.

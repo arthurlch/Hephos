@@ -5,7 +5,7 @@ export PATH := /opt/homebrew/bin:$(HOME)/.cargo/bin:$(PATH)
 
 OFFLINE := --workspace --exclude example-database --exclude example-auth
 
-.PHONY: ci fmt fmt-check lint arch-lint deny test nextest build run-rest run-streaming run-websocket clean
+.PHONY: ci fmt fmt-check lint arch-lint deny test bench nextest build run-rest run-streaming run-websocket clean
 
 ## ci: what GitHub Actions runs for the offline baseline
 ci: fmt-check lint arch-lint test
@@ -33,6 +33,10 @@ sbom:
 
 test:
 	cargo test --locked --all-features $(OFFLINE)
+
+## bench: run microbenchmarks to verify request lifecycle overhead
+bench:
+	cargo bench -p hephos-core --bench overhead -- --warm-up-time 1 --measurement-time 2
 
 ## nextest: faster offline test run (opt-in; `cargo install cargo-nextest`). Same scope
 ## as `test`; `cargo test` stays the zero-install default so a clean checkout always works.
