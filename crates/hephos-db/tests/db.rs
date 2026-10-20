@@ -235,3 +235,109 @@ async fn outbox_enqueue_tx_commit_and_drain_roundtrip() {
     assert_eq!(dispatched.state, hephos_db::OutboxState::Dispatched);
     assert!(dispatched.dispatched_at.is_some());
 }
+
+#[tokio::test]
+#[ignore = "requires Postgres (DATABASE_URL)"]
+async fn workflows_postgres_checkpointing_resumption_and_saga() {
+    let db = hephos_db::Db::connect_from_env()
+        .await
+        .expect("DATABASE_URL must point at a reachable Postgres");
+    let workflows = db.workflows();
+    workflows.migrate().await.expect("migrate workflows schema");
+
+    let wf_id = uuid::Uuid::new_v4();
+    let step1_counter = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+
+    // Phase 1: Run step 1, then crash before step 2
+    {
+        let mut flow = workflows
+            .start_with_id(
+                wf_id,
+                "onboarding_flow",
+                &serde_json::json!({ "user": "bob" }),
+            )
+            .await
+            .expect("start workflow");
+
+        let c = step1_counter.clone();
+        let val: i32 = flow
+            .step("provision_resource", || async move {
+                c.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok(123)
+            })
+            .await
+            .expect("step 1");
+        assert_eq!(val, 123);
+        assert_eq!(step1_counter.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+        // Register compensation
+        flow.register_compensation(
+            "provision_resource",
+            "deprovision",
+            &serde_json::json!({ "resource_id": 123 }),
+        )
+        .await
+        .expect("register compensation");
+        // Simulated process termination
+    }
+
+    // Phase 2: Resume after crash — step 1 must be skipped using cached Postgres checkpoint
+    {
+        let mut flow = workflows.resume(wf_id).await.expect("resume workflow");
+
+        let c = step1_counter.clone();
+        let val: i32 = flow
+            .step("provision_resource", || async move {
+                c.fetch_add(100, std::sync::atomic::Ordering::SeqCst);
+                Ok(999)
+            })
+            .await
+            .expect("step 1 on resume");
+        // Value came from Postgres checkpoint, closure was not invoked
+        assert_eq!(val, 123);
+        assert_eq!(step1_counter.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+        // Concurrently approve from background task
+        let wf_clone = workflows.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            wf_clone
+                .approve(
+                    wf_id,
+                    "manager_review",
+                    Some(serde_json::json!({ "approved": true })),
+                )
+                .await
+                .expect("approve");
+        });
+
+        let decision = flow
+            .await_approval("manager_review", std::time::Duration::from_secs(2))
+            .await
+            .expect("approval decision");
+        assert_eq!(
+            decision,
+            hephos_db::ApprovalDecision::Approved(Some(serde_json::json!({ "approved": true })))
+        );
+
+        // Step 2 completes
+        let welcome: String = flow
+            .step(
+                "send_welcome",
+                || async move { Ok("welcome_sent".to_string()) },
+            )
+            .await
+            .expect("step 2");
+        assert_eq!(welcome, "welcome_sent");
+
+        flow.complete(&serde_json::json!({ "status": "ok" }))
+            .await
+            .expect("complete workflow");
+    }
+
+    let record = workflows.get(wf_id).await.unwrap().unwrap();
+    assert_eq!(record.state, hephos_db::WorkflowState::Completed);
+
+    let steps = workflows.steps(wf_id).await.unwrap();
+    assert_eq!(steps.len(), 2);
+}

@@ -16,9 +16,14 @@ use sqlx::postgres::{PgPool, PgPoolOptions};
 
 pub mod jobs;
 pub mod outbox;
+pub mod workflow;
 
 pub use jobs::{Job, JobOptions, JobRegistry, JobState, JobWorker, Jobs};
 pub use outbox::{Outbox, OutboxDrain, OutboxEntry, OutboxState};
+pub use workflow::{
+    ApprovalDecision, ApprovalState, WorkflowApprovalRecord, WorkflowCompensationRecord,
+    WorkflowContext, WorkflowRecord, WorkflowState, WorkflowStepRecord, Workflows,
+};
 
 /// Connection-pool tuning. Read from the environment by [`Db::connect_from_env`];
 /// bounded by default so a stuck query cannot exhaust the pool.
@@ -178,6 +183,11 @@ impl Db {
     /// Access the transactional outbox handle.
     pub fn outbox(&self) -> Outbox {
         Outbox::new(self.clone())
+    }
+
+    /// Access the Postgres-checkpointed durable workflows orchestrator.
+    pub fn workflows(&self) -> Workflows {
+        Workflows::new(self.clone())
     }
 }
 

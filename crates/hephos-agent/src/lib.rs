@@ -25,7 +25,7 @@ mod message;
 mod model;
 mod tool;
 
-pub use agent::{Agent, Limits, parse_tool_calls};
+pub use agent::{Agent, AgentCheckpoint, InMemoryAgentCheckpoint, Limits, parse_tool_calls};
 pub use message::{Message, Role, TextStream};
 pub use model::{Completion, Model};
 pub use providers::{Anthropic, OpenAI};

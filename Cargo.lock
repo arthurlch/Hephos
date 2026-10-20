@@ -692,6 +692,7 @@ dependencies = [
  "futures",
  "hephos",
  "serde",
+ "serde_json",
  "tokio",
  "uuid",
 ]
@@ -982,6 +983,7 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 name = "hephos"
 version = "0.1.0"
 dependencies = [
+ "futures",
  "hephos-agent",
  "hephos-core",
  "hephos-db",

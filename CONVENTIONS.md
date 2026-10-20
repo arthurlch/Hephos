@@ -434,26 +434,31 @@ use crate::state::{AppState, Ctx};
 pub struct OnboardingWorkflow;
 
 impl OnboardingWorkflow {
-    pub async fn run(&self, ctx: &Ctx, input: CreateUser) -> Result<uuid::Uuid> {
-        let user = ctx.state().users.create(ctx, input).await?;
-        self.provision(ctx, user.id).await?;
-        self.welcome(ctx, user.id).await?;
+    pub async fn run(&self, ctx: &Ctx, flow: &mut WorkflowContext, input: CreateUser) -> Result<uuid::Uuid> {
+        let user = flow.step("create_user", || async {
+            ctx.state().users.create(ctx, input).await
+        }).await?;
+
+        flow.register_compensation("create_user", "delete_user", &user.id).await?;
+
+        flow.step("provision_workspace", || async {
+            ctx.state().workspaces.create_default(ctx, user.id).await
+        }).await?;
+
+        flow.step("welcome", || async {
+            ctx.state().notifier.welcome(ctx, user.id).await
+        }).await?;
+
+        flow.complete(&user.id).await?;
         Ok(user.id)
-    }
-
-    async fn provision(&self, ctx: &Ctx, id: uuid::Uuid) -> Result<()> {
-        ctx.state().workspaces.create_default(ctx, id).await
-    }
-
-    async fn welcome(&self, ctx: &Ctx, id: uuid::Uuid) -> Result<()> {
-        ctx.state().notifier.welcome(ctx, id).await
     }
 }
 ```
 
-Workflow rules: a struct with `run(ctx, input) -> Result<Output>`; steps are
-private methods; each step calls services/agents; failure propagates with `?`;
-cancellation is inherited from `ctx`.
+Workflow rules: a struct with `run(ctx, flow, input) -> Result<Output>`; steps are
+wrapped with `flow.step("step_name", || async { ... })` committing progress in DB
+checkpoints; failures propagate with `?`; compensations register with
+`flow.register_compensation`; cancellation is inherited from `ctx`.
 
 ### 2.12 MCP server (`mcp/server.rs`)
 
