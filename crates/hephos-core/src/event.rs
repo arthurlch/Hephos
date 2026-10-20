@@ -21,9 +21,9 @@ pub trait Event: Clone + Send + Sync + 'static {}
 /// Emitting never blocks the caller. Subscribers are background tasks registered
 /// on [`crate::App`]; each receives every event and matches on the enum.
 ///
-/// BOUNDARY: this is deliberately in-process and at-most-once. Durable or
-/// cross-service delivery (an outbox table, a broker) is a later, additive
-/// concern — see ARCHITECTURE.md § Events. Do not grow this into a message queue.
+/// This bus is in-process and at-most-once. For transactional, at-least-once
+/// durable delivery across services or worker processes, use the Postgres-backed
+/// outbox pattern ([`hephos_db::Outbox`]). Do not grow this in-process bus into a message queue.
 #[derive(Clone)]
 pub struct Events<E: Event> {
     tx: broadcast::Sender<E>,

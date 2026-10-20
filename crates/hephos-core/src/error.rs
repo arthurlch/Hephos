@@ -74,10 +74,24 @@ impl Error {
         Error::Invalid(msg.into())
     }
 
-    /// A `409`: the request conflicts with current state, e.g. a duplicate unique key.
+    /// A `401`: the client is unauthenticated or credentials are missing/invalid.
+    pub fn unauthorized() -> Self {
+        Error::Unauthorized
+    }
+
+    /// A `403`: the client is authenticated but lacks required permissions/roles.
+    pub fn forbidden() -> Self {
+        Error::Forbidden
+    }
+
     /// A `409`: the request conflicts with current state, e.g. a duplicate unique key.
     pub fn conflict(msg: impl Into<String>) -> Self {
         Error::Conflict(msg.into())
+    }
+
+    /// A `413`: the request payload exceeds the allowed body limit.
+    pub fn payload_too_large() -> Self {
+        Error::PayloadTooLarge
     }
 
     /// A `429`: the client has exceeded its rate limit quota.
@@ -96,7 +110,8 @@ impl Error {
         Error::Internal(anyhow::anyhow!(msg.into()))
     }
 
-    fn status(&self) -> StatusCode {
+    /// The HTTP status code corresponding to this error.
+    pub fn status(&self) -> StatusCode {
         match self {
             Error::NotFound(_) => StatusCode::NOT_FOUND,
             Error::Invalid(_) => StatusCode::BAD_REQUEST,
@@ -110,7 +125,8 @@ impl Error {
         }
     }
 
-    fn kind(&self) -> &'static str {
+    /// The machine-readable error kind identifier (e.g. `"not_found"`, `"unauthorized"`).
+    pub fn kind(&self) -> &'static str {
         match self {
             Error::NotFound(_) => "not_found",
             Error::Invalid(_) => "invalid",
@@ -122,6 +138,51 @@ impl Error {
             Error::Unavailable(_) => "unavailable",
             Error::Internal(_) => "internal",
         }
+    }
+
+    /// Returns `true` if this error is [`Error::NotFound`].
+    pub fn is_not_found(&self) -> bool {
+        matches!(self, Error::NotFound(_))
+    }
+
+    /// Returns `true` if this error is [`Error::Invalid`].
+    pub fn is_invalid(&self) -> bool {
+        matches!(self, Error::Invalid(_))
+    }
+
+    /// Returns `true` if this error is [`Error::Unauthorized`].
+    pub fn is_unauthorized(&self) -> bool {
+        matches!(self, Error::Unauthorized)
+    }
+
+    /// Returns `true` if this error is [`Error::Forbidden`].
+    pub fn is_forbidden(&self) -> bool {
+        matches!(self, Error::Forbidden)
+    }
+
+    /// Returns `true` if this error is [`Error::Conflict`].
+    pub fn is_conflict(&self) -> bool {
+        matches!(self, Error::Conflict(_))
+    }
+
+    /// Returns `true` if this error is [`Error::PayloadTooLarge`].
+    pub fn is_payload_too_large(&self) -> bool {
+        matches!(self, Error::PayloadTooLarge)
+    }
+
+    /// Returns `true` if this error is [`Error::RateLimited`].
+    pub fn is_rate_limited(&self) -> bool {
+        matches!(self, Error::RateLimited(_))
+    }
+
+    /// Returns `true` if this error is [`Error::Unavailable`].
+    pub fn is_unavailable(&self) -> bool {
+        matches!(self, Error::Unavailable(_))
+    }
+
+    /// Returns `true` if this error is [`Error::Internal`].
+    pub fn is_internal(&self) -> bool {
+        matches!(self, Error::Internal(_))
     }
 }
 

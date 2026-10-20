@@ -3,6 +3,29 @@
 All notable changes to Hephos are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer.
 
+## [1.0.0] - 2026-10-20
+
+### Added
+- **General Availability & SemVer 2.0 API Freeze**:
+  - Bumped all crates to `1.0.0` with full backwards-compatibility guarantees and deprecation cycle policies.
+  - Formally frozen public API surface across HTTP routing, database repositories, auth, background tasks/jobs, workflows, agents, and MCP.
+- **The Agent Playbook (`AGENT_PLAYBOOK.md`)**:
+  - Published the canonical operating manual and system instructions for coding agents, featuring turn-to-green recipes, strict layering rules, and anti-pattern guides.
+- **API Coherence & Usability Hardening**:
+  - Added constructor parity on `hephos_core::Error`: `Error::unauthorized()`, `Error::forbidden()`, and `Error::payload_too_large()`.
+  - Made `Error::status(&self)` and `Error::kind(&self)` public; added inspection predicates (`is_not_found`, `is_invalid`, `is_unauthorized`, `is_forbidden`, `is_conflict`, `is_rate_limited`, `is_unavailable`, `is_internal`).
+  - Added constructors and query helpers to `Identity` and `Principal` (`Identity::user()`, `is_authenticated()`, `is_anonymous()`, `principal()`).
+  - Updated `Ctx::with_cancel` to accept `&self` for symmetrical ergonomic parity with `with_identity`.
+  - Added `patch_json` and `patch_json_with_token` to `TestClient`, along with `status_code()` and `bytes()` accessors to `TestResponse`.
+  - Re-exported `schemars::JsonSchema`, `Message`, `Role`, and `TextStream` in `hephos::prelude` when `feature = "agent"` is active.
+  - Eliminated manual JSON error formatting and unwraps in `hephos-mcp` auth middleware in favor of `Error::into_response()`.
+- **Hephos CLI Tooling (`hephos-cli`)**:
+  - Implemented `hephos check` command to statically validate `AGENTS.md` architectural layering rules across any project directory.
+  - Implemented `hephos doctor` command to diagnose Rust toolchain versions, database connectivity, and required environment variables.
+  - Implemented `hephos generate resource` command to scaffold canonical domain, repo, service, and API skeletons.
+- **Zero Boundary Markers**:
+  - Removed all remaining `// BOUNDARY:` markers across framework crates. All subsystems are production implemented.
+
 ## [0.9.0] - 2026-10-20
 
 ### Added

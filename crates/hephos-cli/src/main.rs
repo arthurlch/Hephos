@@ -1,8 +1,11 @@
 use std::path::PathBuf;
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use clap::{Args, Parser, Subcommand};
-use hephos_cli::{format_json, format_table, generate_openapi, scaffold_app, scan_routes};
+use hephos_cli::{
+    DiagnosticStatus, check_project, format_json, format_table, generate_openapi,
+    generate_resource, run_doctor, scaffold_app, scan_routes,
+};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -25,6 +28,15 @@ enum Command {
 
     /// Generate and print the OpenAPI 3.1.0 specification for the application.
     Openapi(OpenapiArgs),
+
+    /// Validate AGENTS.md architectural layering boundaries.
+    Check(CheckArgs),
+
+    /// Diagnose development environment and verify toolchain dependencies.
+    Doctor(DoctorArgs),
+
+    /// Generate canonical domain, repo, service, and API scaffold files.
+    Generate(GenerateArgs),
 }
 
 #[derive(Args, Debug)]
@@ -63,8 +75,35 @@ struct OpenapiArgs {
     title: String,
 
     /// Version of the API.
-    #[arg(long, default_value = "0.1.0")]
+    #[arg(long, default_value = "1.0.0")]
     version: String,
+}
+
+#[derive(Args, Debug)]
+struct CheckArgs {
+    /// Path to the application root directory (default: current directory).
+    #[arg(default_value = ".")]
+    path: PathBuf,
+}
+
+#[derive(Args, Debug)]
+struct DoctorArgs {
+    /// Path to the project root directory (default: current directory).
+    #[arg(default_value = ".")]
+    path: PathBuf,
+}
+
+#[derive(Args, Debug)]
+struct GenerateArgs {
+    /// Type of artifact to generate (e.g. "resource").
+    artifact_type: String,
+
+    /// Name of the resource (e.g. "item", "user", "order").
+    name: String,
+
+    /// Path to the project root directory (default: current directory).
+    #[arg(short, long, default_value = ".")]
+    path: PathBuf,
 }
 
 fn main() -> Result<()> {
@@ -98,6 +137,69 @@ fn main() -> Result<()> {
             let routes = scan_routes(&args.path)?;
             let doc = generate_openapi(&routes, &args.title, &args.version);
             println!("{}", serde_json::to_string_pretty(&doc)?);
+            Ok(())
+        }
+        Command::Check(args) => {
+            println!(
+                "Checking architectural boundaries at '{}'...",
+                args.path.display()
+            );
+            let violations = check_project(&args.path)?;
+            if violations.is_empty() {
+                println!("✓ No boundary violations found.");
+                Ok(())
+            } else {
+                eprintln!(
+                    "✗ Found {} architectural boundary violation(s):",
+                    violations.len()
+                );
+                for v in &violations {
+                    eprintln!(
+                        "  {}:{}: {} ({})",
+                        v.file.display(),
+                        v.line_number,
+                        v.rule,
+                        v.line_content.trim()
+                    );
+                }
+                bail!("Architecture check failed.");
+            }
+        }
+        Command::Doctor(args) => {
+            println!("Hephos Environment Doctor:\n");
+            let items = run_doctor(&args.path)?;
+            let mut has_errors = false;
+            for item in &items {
+                let symbol = match item.status {
+                    DiagnosticStatus::Ok => "✓",
+                    DiagnosticStatus::Warning => "!",
+                    DiagnosticStatus::Error => {
+                        has_errors = true;
+                        "✗"
+                    }
+                };
+                println!("  [{symbol}] {}: {}", item.name, item.detail);
+            }
+            println!();
+            if has_errors {
+                bail!("One or more critical environment checks failed.");
+            } else {
+                println!("✓ Environment ready for Hephos development.");
+                Ok(())
+            }
+        }
+        Command::Generate(args) => {
+            if args.artifact_type != "resource" {
+                bail!(
+                    "Unknown artifact type '{}'. Supported: 'resource'",
+                    args.artifact_type
+                );
+            }
+            let files = generate_resource(&args.path, &args.name)?;
+            println!("Generated resource '{}':", args.name);
+            for f in files {
+                println!("  ✓ {f}");
+            }
             Ok(())
         }
     }
