@@ -42,6 +42,9 @@ pub use telemetry::RedMetrics;
 /// `Result<StatusCode>`) without importing `axum` directly.
 pub use axum::http::StatusCode;
 
+/// Re-export the UUID primitive used across identity, request-id, and path parameters.
+pub use uuid::{self, Uuid};
+
 /// Re-export the cancellation primitive so apps never pull it in directly.
 pub use tokio_util::sync::CancellationToken;
 

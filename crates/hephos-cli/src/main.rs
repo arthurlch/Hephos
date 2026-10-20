@@ -111,11 +111,21 @@ fn main() -> Result<()> {
 
     match cli.command {
         Command::New(args) => {
-            let target_dir = args.path.unwrap_or_else(|| PathBuf::from(&args.name));
-            scaffold_app(&args.name, &target_dir, args.local_path.as_deref())?;
+            let (pkg_name, target_dir) = match args.path {
+                Some(p) => (args.name.clone(), p),
+                None => {
+                    let p = PathBuf::from(&args.name);
+                    if let Some(file_name) = p.file_name().and_then(|n| n.to_str()) {
+                        (file_name.to_string(), p)
+                    } else {
+                        (args.name.clone(), p)
+                    }
+                }
+            };
+            scaffold_app(&pkg_name, &target_dir, args.local_path.as_deref())?;
             println!(
                 "Created Hephos application '{}' at {}",
-                args.name,
+                pkg_name,
                 target_dir.display()
             );
             println!("\nNext steps:");
