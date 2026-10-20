@@ -178,6 +178,10 @@ impl TestClient {
         self.json_request("PUT", path, body).await
     }
 
+    pub async fn patch_json<T: Serialize>(&self, path: &str, body: &T) -> TestResponse {
+        self.json_request("PATCH", path, body).await
+    }
+
     /// Send with an `Authorization: Bearer` header, for testing protected routes.
     pub async fn get_with_token(&self, path: &str, token: &str) -> TestResponse {
         self.send(
@@ -223,6 +227,17 @@ impl TestClient {
         body: &T,
     ) -> TestResponse {
         self.json_request_with_token("PUT", path, token, body).await
+    }
+
+    /// `PATCH` a JSON body with an `Authorization: Bearer` header.
+    pub async fn patch_json_with_token<T: Serialize>(
+        &self,
+        path: &str,
+        token: &str,
+        body: &T,
+    ) -> TestResponse {
+        self.json_request_with_token("PATCH", path, token, body)
+            .await
     }
 
     async fn json_request_with_token<T: Serialize>(
@@ -278,6 +293,16 @@ pub struct TestResponse {
 impl TestResponse {
     pub fn status(&self) -> u16 {
         self.status.as_u16()
+    }
+
+    /// Return the [`StatusCode`] of this response.
+    pub fn status_code(&self) -> StatusCode {
+        self.status
+    }
+
+    /// Return a reference to the raw response body [`Bytes`].
+    pub fn bytes(&self) -> &Bytes {
+        &self.body
     }
 
     pub fn json<T: DeserializeOwned>(&self) -> T {

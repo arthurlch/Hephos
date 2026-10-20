@@ -20,6 +20,7 @@ members = [
 ]
 
 [workspace.package]
+version = "1.0.0"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
@@ -28,11 +29,11 @@ repository = "https://github.com/arthurlch/hephos"
 # One pinned version per dependency, declared once, inherited everywhere.
 # Adding a dependency here is a deliberate, reviewed act (see CONVENTIONS.md).
 [workspace.dependencies]
-hephos = { path = "crates/hephos" }
-hephos-core = { path = "crates/hephos-core" }
-hephos-db = { path = "crates/hephos-db" }
-hephos-agent = { path = "crates/hephos-agent" }
-hephos-mcp = { path = "crates/hephos-mcp" }
+hephos = { version = "1.0.0", path = "crates/hephos" }
+hephos-core = { version = "1.0.0", path = "crates/hephos-core" }
+hephos-db = { version = "1.0.0", path = "crates/hephos-db" }
+hephos-agent = { version = "1.0.0", path = "crates/hephos-agent" }
+hephos-mcp = { version = "1.0.0", path = "crates/hephos-mcp" }
 
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync", "time", "net"] }
 tokio-util = { version = "0.7", features = ["rt"] }

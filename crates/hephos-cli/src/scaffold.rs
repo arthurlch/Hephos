@@ -24,7 +24,9 @@ pub fn validate_package_name(name: &str) -> Result<()> {
     }
 
     let mut chars = name.chars();
-    let first = chars.next().unwrap();
+    let Some(first) = chars.next() else {
+        bail!("package name cannot be empty");
+    };
     if !first.is_ascii_alphabetic() && first != '_' {
         bail!("package name must start with an ASCII letter or underscore, found '{first}'");
     }
@@ -72,7 +74,7 @@ pub fn scaffold_app(name: &str, target_dir: &Path, local_hephos_path: Option<&Pa
             let path_str = path.display().to_string().replace('\\', "/");
             format!("hephos = {{ path = \"{path_str}\" }}")
         }
-        None => "hephos = { version = \"0.1.0\" }".to_string(),
+        None => "hephos = { version = \"1.0.0\" }".to_string(),
     };
 
     // 1. Cargo.toml

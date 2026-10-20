@@ -37,7 +37,7 @@ use serde::de::DeserializeOwned;
 /// Implements rmcp's [`ServerHandler`]. Each registered Hephos [`Tool`] is exposed
 /// with its derived `schemars` input schema, with invocations deserializing arguments,
 /// executing [`Tool::call`], and serializing results back to MCP responses.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct McpServer {
     name: String,
     version: String,
@@ -156,19 +156,9 @@ impl McpServer {
                     let token = match token {
                         Some(t) if !t.is_empty() && t.len() <= 4096 => t.to_string(),
                         _ => {
-                            let body = serde_json::json!({
-                                "error": {
-                                    "kind": "unauthorized",
-                                    "message": "missing or invalid authorization header"
-                                }
-                            });
-                            return axum::response::Response::builder()
-                                .status(axum::http::StatusCode::UNAUTHORIZED)
-                                .header(axum::http::header::CONTENT_TYPE, "application/json")
-                                .body(axum::body::Body::from(
-                                    serde_json::to_string(&body).unwrap(),
-                                ))
-                                .unwrap();
+                            return axum::response::IntoResponse::into_response(
+                                Error::Unauthorized,
+                            );
                         }
                     };
 
@@ -178,51 +168,7 @@ impl McpServer {
                             req.extensions_mut().insert(identity);
                             next.run(req).await
                         }
-                        Err(Error::Unauthorized) => {
-                            let body = serde_json::json!({
-                                "error": {
-                                    "kind": "unauthorized",
-                                    "message": "unauthorized"
-                                }
-                            });
-                            axum::response::Response::builder()
-                                .status(axum::http::StatusCode::UNAUTHORIZED)
-                                .header(axum::http::header::CONTENT_TYPE, "application/json")
-                                .body(axum::body::Body::from(
-                                    serde_json::to_string(&body).unwrap(),
-                                ))
-                                .unwrap()
-                        }
-                        Err(Error::Forbidden) => {
-                            let body = serde_json::json!({
-                                "error": {
-                                    "kind": "forbidden",
-                                    "message": "forbidden"
-                                }
-                            });
-                            axum::response::Response::builder()
-                                .status(axum::http::StatusCode::FORBIDDEN)
-                                .header(axum::http::header::CONTENT_TYPE, "application/json")
-                                .body(axum::body::Body::from(
-                                    serde_json::to_string(&body).unwrap(),
-                                ))
-                                .unwrap()
-                        }
-                        Err(_) => {
-                            let body = serde_json::json!({
-                                "error": {
-                                    "kind": "internal",
-                                    "message": "internal error during authentication"
-                                }
-                            });
-                            axum::response::Response::builder()
-                                .status(axum::http::StatusCode::INTERNAL_SERVER_ERROR)
-                                .header(axum::http::header::CONTENT_TYPE, "application/json")
-                                .body(axum::body::Body::from(
-                                    serde_json::to_string(&body).unwrap(),
-                                ))
-                                .unwrap()
-                        }
+                        Err(err) => axum::response::IntoResponse::into_response(err),
                     }
                 }
             },
@@ -313,6 +259,12 @@ impl ServerHandler for McpServer {
 #[derive(Clone)]
 pub struct McpClient {
     service: Arc<RunningService<RoleClient, ()>>,
+}
+
+impl std::fmt::Debug for McpClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("McpClient").finish_non_exhaustive()
+    }
 }
 
 impl McpClient {

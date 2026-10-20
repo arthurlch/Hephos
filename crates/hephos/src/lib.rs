@@ -11,11 +11,10 @@
 //!
 //! # Stability
 //!
-//! At `0.1.0` the **HTTP + database + auth** surface (`hephos_core`, `hephos_db`) is the
-//! stable, reviewed API. The **`agent` and `mcp` features are pre-1.0 and unstable** —
-//! their model-provider and server seams still have placeholder implementations and
-//! their signatures may change in a later minor release (they are scheduled for
-//! `0.5.0`/`0.6.0`). Do not treat them as frozen.
+//! Hephos `1.0.0` is the production-ready, stable release. All public APIs across
+//! HTTP routing, database/outbox/jobs/workflows, authentication, telemetry, agents,
+//! and MCP follow Semantic Versioning 2.0 with a backwards-compatibility guarantee
+//! and deprecation cycle policy.
 
 #![forbid(unsafe_code)]
 
@@ -49,13 +48,13 @@ pub mod prelude {
         ApprovalDecision, ApprovalState, Db, Job, JobOptions, JobRegistry, JobState, JobWorker,
         Jobs, Outbox, OutboxDrain, OutboxEntry, OutboxState, Tx, WorkflowApprovalRecord,
         WorkflowCompensationRecord, WorkflowContext, WorkflowRecord, WorkflowState,
-        WorkflowStepRecord, Workflows,
+        WorkflowStepRecord, Workflows, is_unique_violation,
     };
 
     #[cfg(feature = "agent")]
     pub use hephos_agent::{
-        Agent, AgentCheckpoint, InMemoryAgentCheckpoint, Limits, Model, Tool, ToolCall,
-        ToolDefinition, ToolRegistry, ToolResult, ToolSchema, Tools,
+        Agent, AgentCheckpoint, InMemoryAgentCheckpoint, JsonSchema, Limits, Message, Model, Role,
+        TextStream, Tool, ToolCall, ToolDefinition, ToolRegistry, ToolResult, ToolSchema, Tools,
     };
 
     #[cfg(all(feature = "db", feature = "agent"))]
@@ -73,6 +72,7 @@ pub mod workflow_agent {
     use hephos_db::WorkflowContext;
 
     /// Bridge enabling a [`WorkflowContext`] to provide turn checkpoint persistence for [`hephos_agent::Agent::run_durable`].
+    #[derive(Clone, Debug)]
     pub struct WorkflowAgentCheckpoint {
         context: WorkflowContext,
         prefix: String,

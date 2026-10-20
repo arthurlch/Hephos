@@ -90,6 +90,17 @@ pub struct Agent<M: Model> {
     cancel_token: Option<CancellationToken>,
 }
 
+impl<M: Model> std::fmt::Debug for Agent<M> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Agent")
+            .field("system", &self.system)
+            .field("tools", &self.tools)
+            .field("limits", &self.limits)
+            .field("cancel_token", &self.cancel_token)
+            .finish_non_exhaustive()
+    }
+}
+
 impl<M: Model> Agent<M> {
     pub fn new(model: M) -> Self {
         Agent {

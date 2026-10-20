@@ -31,6 +31,15 @@ pub struct Ctx<S> {
     cancel: CancellationToken,
 }
 
+impl<S> std::fmt::Debug for Ctx<S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Ctx")
+            .field("identity", &self.identity)
+            .field("request_id", &self.request_id)
+            .finish_non_exhaustive()
+    }
+}
+
 impl<S: Clone + Send + Sync + 'static> Ctx<S> {
     /// The application state. Services and the database live here.
     pub fn state(&self) -> &S {
@@ -115,9 +124,13 @@ impl<S: Clone + Send + Sync + 'static> Ctx<S> {
     /// Return a copy of this context bound to a specific cancellation token.
     /// Used by [`crate::App`] to tie background tasks to the process shutdown
     /// token.
-    pub fn with_cancel(mut self, cancel: CancellationToken) -> Self {
-        self.cancel = cancel;
-        self
+    pub fn with_cancel(&self, cancel: CancellationToken) -> Self {
+        Ctx {
+            state: self.state.clone(),
+            identity: self.identity.clone(),
+            request_id: self.request_id,
+            cancel,
+        }
     }
 
     /// Record an audit event associated with this request context.

@@ -17,6 +17,31 @@ pub enum Identity {
     User(Principal),
 }
 
+impl Identity {
+    /// Create an authenticated [`Identity::User`] with an id and roles.
+    pub fn user(id: Uuid, roles: Vec<String>) -> Self {
+        Identity::User(Principal::new(id, roles))
+    }
+
+    /// Returns `true` if the identity is an authenticated user.
+    pub fn is_authenticated(&self) -> bool {
+        matches!(self, Identity::User(_))
+    }
+
+    /// Returns `true` if the identity is anonymous.
+    pub fn is_anonymous(&self) -> bool {
+        matches!(self, Identity::Anonymous)
+    }
+
+    /// Return a reference to the [`Principal`] if authenticated, or `None` if anonymous.
+    pub fn principal(&self) -> Option<&Principal> {
+        match self {
+            Identity::User(p) => Some(p),
+            Identity::Anonymous => None,
+        }
+    }
+}
+
 /// The authenticated caller.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Principal {
@@ -25,6 +50,12 @@ pub struct Principal {
 }
 
 impl Principal {
+    /// Construct a new [`Principal`] with the given id and roles.
+    pub fn new(id: Uuid, roles: Vec<String>) -> Self {
+        Principal { id, roles }
+    }
+
+    /// Returns `true` if the principal holds the given role.
     pub fn has_role(&self, role: &str) -> bool {
         self.roles.iter().any(|r| r == role)
     }
