@@ -60,7 +60,49 @@ pub fn run_doctor(project_root: &Path) -> Result<Vec<DiagnosticItem>> {
         }
     }
 
-    // 3. Check sqlx-cli
+    // 3. Check rustfmt
+    let rustfmt_installed = Command::new("rustfmt")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+
+    if rustfmt_installed {
+        diagnostics.push(DiagnosticItem {
+            name: "Rust formatter (rustfmt)",
+            status: DiagnosticStatus::Ok,
+            detail: "rustfmt is installed and ready".to_string(),
+        });
+    } else {
+        diagnostics.push(DiagnosticItem {
+            name: "Rust formatter (rustfmt)",
+            status: DiagnosticStatus::Warning,
+            detail: "rustfmt not found; install with: rustup component add rustfmt".to_string(),
+        });
+    }
+
+    // 4. Check clippy
+    let clippy_installed = Command::new("cargo")
+        .args(["clippy", "--version"])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+
+    if clippy_installed {
+        diagnostics.push(DiagnosticItem {
+            name: "Rust linter (clippy)",
+            status: DiagnosticStatus::Ok,
+            detail: "cargo-clippy is installed and ready".to_string(),
+        });
+    } else {
+        diagnostics.push(DiagnosticItem {
+            name: "Rust linter (clippy)",
+            status: DiagnosticStatus::Warning,
+            detail: "clippy not found; install with: rustup component add clippy".to_string(),
+        });
+    }
+
+    // 5. Check sqlx-cli
     let sqlx_installed = Command::new("cargo")
         .args(["sqlx", "--version"])
         .output()
@@ -81,22 +123,49 @@ pub fn run_doctor(project_root: &Path) -> Result<Vec<DiagnosticItem>> {
         });
     }
 
-    // 4. Check DATABASE_URL
+    // 6. Check DATABASE_URL
     let db_url = std::env::var("DATABASE_URL").ok();
-    let env_file_exists = project_root.join(".env").exists();
+    let env_file = project_root.join(".env");
+    let env_db_url = if env_file.exists() {
+        std::fs::read_to_string(&env_file)
+            .ok()
+            .and_then(|contents| {
+                contents.lines().find_map(|line| {
+                    let trimmed = line.trim();
+                    if trimmed.starts_with('#') {
+                        return None;
+                    }
+                    let (k, v) = trimmed.split_once('=')?;
+                    if k.trim() == "DATABASE_URL" {
+                        Some(v.trim().trim_matches('"').trim_matches('\'').to_string())
+                    } else {
+                        None
+                    }
+                })
+            })
+    } else {
+        None
+    };
 
     if let Some(url) = db_url {
         let masked = mask_db_url(&url);
         diagnostics.push(DiagnosticItem {
             name: "DATABASE_URL environment variable",
             status: DiagnosticStatus::Ok,
-            detail: format!("Configured ({masked})"),
+            detail: format!("Configured in environment ({masked})"),
         });
-    } else if env_file_exists {
+    } else if let Some(url) = env_db_url {
+        let masked = mask_db_url(&url);
         diagnostics.push(DiagnosticItem {
             name: "DATABASE_URL environment variable",
             status: DiagnosticStatus::Ok,
-            detail: ".env file found in project root".to_string(),
+            detail: format!("Configured in .env ({masked})"),
+        });
+    } else if env_file.exists() {
+        diagnostics.push(DiagnosticItem {
+            name: "DATABASE_URL environment variable",
+            status: DiagnosticStatus::Warning,
+            detail: ".env file found, but DATABASE_URL is not defined in it".to_string(),
         });
     } else {
         diagnostics.push(DiagnosticItem {
