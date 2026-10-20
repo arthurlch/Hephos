@@ -119,9 +119,13 @@ struct RawEnv<'a> {
 impl Config {
     pub fn from_env() -> Result<Self> {
         let addr = std::env::var("HEPHOS_ADDR").ok();
-        let log = std::env::var("HEPHOS_LOG").ok();
+        let log = std::env::var("HEPHOS_LOG_FORMAT")
+            .or_else(|_| std::env::var("HEPHOS_LOG"))
+            .ok();
         let timeout_secs = std::env::var("HEPHOS_TIMEOUT_SECS").ok();
-        let body_limit = std::env::var("HEPHOS_BODY_LIMIT").ok();
+        let body_limit = std::env::var("HEPHOS_BODY_LIMIT")
+            .or_else(|_| std::env::var("HEPHOS_BODY_LIMIT_BYTES"))
+            .ok();
         let hsts = std::env::var("HEPHOS_HSTS").ok();
         let cors_origins = std::env::var("HEPHOS_CORS_ORIGINS").ok();
         let rate_limit_rps = std::env::var("HEPHOS_RATE_LIMIT_RPS").ok();
@@ -163,11 +167,12 @@ impl Config {
         };
 
         let log = match env.log {
-            Some("json") => LogFormat::Json,
-            Some("pretty") | None => LogFormat::Pretty,
+            Some(v) if v.eq_ignore_ascii_case("json") => LogFormat::Json,
+            Some(v) if v.eq_ignore_ascii_case("pretty") => LogFormat::Pretty,
+            Some("info" | "warn" | "error" | "debug" | "trace") | None => LogFormat::Pretty,
             Some(other) => {
                 return Err(Error::invalid(format!(
-                    "HEPHOS_LOG must be pretty|json: {other}"
+                    "HEPHOS_LOG_FORMAT must be pretty|json: {other}"
                 )));
             }
         };
@@ -551,5 +556,29 @@ mod tests {
             .unwrap_err(),
             Error::Invalid(_)
         ));
+    }
+
+    #[test]
+    fn log_format_case_insensitive_and_level_fallback() {
+        let json_upper = Config::parse(RawEnv {
+            log: Some("JSON"),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(json_upper.log, LogFormat::Json);
+
+        let pretty_upper = Config::parse(RawEnv {
+            log: Some("PRETTY"),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(pretty_upper.log, LogFormat::Pretty);
+
+        let info_level = Config::parse(RawEnv {
+            log: Some("info"),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(info_level.log, LogFormat::Pretty);
     }
 }

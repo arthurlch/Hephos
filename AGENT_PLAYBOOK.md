@@ -231,6 +231,7 @@ pub async fn update(&self, ctx: &Ctx, id: uuid::Uuid, input: UpdateItem) -> Resu
 ```rust
 use hephos::prelude::*;
 use serde::{Deserialize, Serialize};
+use crate::state::{AppState, Ctx};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SendWelcomeEmail {
@@ -238,18 +239,18 @@ pub struct SendWelcomeEmail {
     pub email: String,
 }
 
-pub fn email_worker(db: Db) -> JobWorker {
-    JobWorker::builder(db)
-        .concurrency(4)
+pub fn email_worker(jobs: Jobs) -> JobWorker<AppState> {
+    let registry = JobRegistry::new().register("send_welcome_email", |_ctx: Ctx, job: Job| async move {
+        let payload: SendWelcomeEmail = serde_json::from_value(job.payload)
+            .map_err(|e| Error::invalid(e.to_string()))?;
+        // Process outbound email delivery
+        tracing::info!(user_id = %payload.user_id, email = %payload.email, "Delivering welcome email");
+        Ok(())
+    });
+
+    JobWorker::new(jobs, registry)
         .poll_interval(std::time::Duration::from_millis(500))
-        .register_async("send_welcome_email", |payload: serde_json::Value| async move {
-            let job: SendWelcomeEmail = serde_json::from_value(payload)
-                .map_err(|e| Error::invalid(e.to_string()))?;
-            // Process outbound email delivery
-            tracing::info!(user_id = %job.user_id, email = %job.email, "Delivering welcome email");
-            Ok(())
-        })
-        .build()
+        .batch_size(10)
 }
 ```
 
@@ -259,8 +260,8 @@ pub async fn register(&self, ctx: &Ctx, input: RegisterUser) -> Result<User> {
     let mut tx = self.db.begin().await?;
     let user = UserRepo::create(tx.exec(), &input).await?;
 
-    // Enqueue transactional job
-    self.db.jobs().enqueue_tx(
+    // Enqueue transactional job via Jobs handle in service or AppState
+    ctx.state().jobs.enqueue_tx(
         &mut tx,
         "send_welcome_email",
         &SendWelcomeEmail {
@@ -358,7 +359,8 @@ use hephos::prelude::*;
 use crate::tools::calculator::CalculatorTool;
 
 pub fn server() -> McpServer {
-    McpServer::new("reference-mcp", "1.0.0")
+    McpServer::new()
+        .with_info("reference-mcp", "1.0.0")
         .tool(CalculatorTool)
 }
 ```
