@@ -42,6 +42,7 @@ pub struct McpServer {
     name: String,
     version: String,
     tools: Tools,
+    caller_identity: hephos_core::Identity,
 }
 
 impl McpServer {
@@ -50,7 +51,22 @@ impl McpServer {
             name: "hephos-mcp".into(),
             version: env!("CARGO_PKG_VERSION").into(),
             tools: Tools::new(),
+            caller_identity: hephos_core::Identity::Anonymous,
         }
+    }
+
+    /// Set the caller identity for tools executed via this MCP server.
+    ///
+    /// By default, tools invoked through MCP receive [`hephos_core::Identity::Anonymous`],
+    /// enforcing least privilege and safe boundary defaults.
+    pub fn with_caller_identity(mut self, identity: hephos_core::Identity) -> Self {
+        self.caller_identity = identity;
+        self
+    }
+
+    /// Return the caller identity associated with this server.
+    pub fn caller_identity(&self) -> &hephos_core::Identity {
+        &self.caller_identity
     }
 
     /// Set custom server info name and version.
@@ -112,6 +128,111 @@ impl McpServer {
     /// Mount as a Streamable HTTP endpoint on a Hephos [`Router`].
     pub fn into_router<S: Clone + Send + Sync + 'static>(self, prefix: &str) -> Router<S> {
         Router::new().nest_service(prefix, self.into_service())
+    }
+
+    /// Mount as a protected Streamable HTTP endpoint on a Hephos [`Router`],
+    /// enforcing bearer token authentication on all incoming MCP connections.
+    pub fn into_protected_router<S, F, Fut>(self, prefix: &str, verify: F) -> Router<S>
+    where
+        S: Clone + Send + Sync + 'static,
+        F: Fn(String) -> Fut + Clone + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<hephos_core::Identity>> + Send + 'static,
+    {
+        let verify = Arc::new(verify);
+        let service = self.into_service();
+        let auth_layer = axum::middleware::from_fn(
+            move |request: axum::extract::Request, next: axum::middleware::Next| {
+                let verify = verify.clone();
+                async move {
+                    let token = request
+                        .headers()
+                        .get(axum::http::header::AUTHORIZATION)
+                        .and_then(|h| h.to_str().ok())
+                        .and_then(|h| {
+                            let (scheme, cred) = h.split_once(' ')?;
+                            scheme.eq_ignore_ascii_case("bearer").then_some(cred.trim())
+                        });
+
+                    let token = match token {
+                        Some(t) if !t.is_empty() && t.len() <= 4096 => t.to_string(),
+                        _ => {
+                            let body = serde_json::json!({
+                                "error": {
+                                    "kind": "unauthorized",
+                                    "message": "missing or invalid authorization header"
+                                }
+                            });
+                            return axum::response::Response::builder()
+                                .status(axum::http::StatusCode::UNAUTHORIZED)
+                                .header(axum::http::header::CONTENT_TYPE, "application/json")
+                                .body(axum::body::Body::from(
+                                    serde_json::to_string(&body).unwrap(),
+                                ))
+                                .unwrap();
+                        }
+                    };
+
+                    match verify(token).await {
+                        Ok(identity) => {
+                            let mut req = request;
+                            req.extensions_mut().insert(identity);
+                            next.run(req).await
+                        }
+                        Err(Error::Unauthorized) => {
+                            let body = serde_json::json!({
+                                "error": {
+                                    "kind": "unauthorized",
+                                    "message": "unauthorized"
+                                }
+                            });
+                            axum::response::Response::builder()
+                                .status(axum::http::StatusCode::UNAUTHORIZED)
+                                .header(axum::http::header::CONTENT_TYPE, "application/json")
+                                .body(axum::body::Body::from(
+                                    serde_json::to_string(&body).unwrap(),
+                                ))
+                                .unwrap()
+                        }
+                        Err(Error::Forbidden) => {
+                            let body = serde_json::json!({
+                                "error": {
+                                    "kind": "forbidden",
+                                    "message": "forbidden"
+                                }
+                            });
+                            axum::response::Response::builder()
+                                .status(axum::http::StatusCode::FORBIDDEN)
+                                .header(axum::http::header::CONTENT_TYPE, "application/json")
+                                .body(axum::body::Body::from(
+                                    serde_json::to_string(&body).unwrap(),
+                                ))
+                                .unwrap()
+                        }
+                        Err(_) => {
+                            let body = serde_json::json!({
+                                "error": {
+                                    "kind": "internal",
+                                    "message": "internal error during authentication"
+                                }
+                            });
+                            axum::response::Response::builder()
+                                .status(axum::http::StatusCode::INTERNAL_SERVER_ERROR)
+                                .header(axum::http::header::CONTENT_TYPE, "application/json")
+                                .body(axum::body::Body::from(
+                                    serde_json::to_string(&body).unwrap(),
+                                ))
+                                .unwrap()
+                        }
+                    }
+                }
+            },
+        );
+
+        let wrapped = tower::ServiceBuilder::new()
+            .layer(auth_layer)
+            .service(service);
+
+        Router::new().nest_service(prefix, wrapped)
     }
 }
 
@@ -453,6 +574,45 @@ mod tests {
     fn into_router_mounts_streamable_http() {
         let server = McpServer::new().tool(Search);
         let router: Router<()> = server.into_router("/mcp");
+        let entries = router.entries();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].method, "ANY");
+        assert_eq!(entries[0].path, "/mcp/*");
+    }
+
+    #[test]
+    fn caller_identity_defaults_to_anonymous_and_supports_custom() {
+        let server = McpServer::new();
+        assert_eq!(*server.caller_identity(), hephos_core::Identity::Anonymous);
+
+        let custom_id = uuid::Uuid::new_v4();
+        let server =
+            server.with_caller_identity(hephos_core::Identity::User(hephos_core::Principal {
+                id: custom_id,
+                roles: vec!["operator".into()],
+            }));
+        if let hephos_core::Identity::User(principal) = server.caller_identity() {
+            assert_eq!(principal.id, custom_id);
+            assert!(principal.has_role("operator"));
+        } else {
+            panic!("expected User identity");
+        }
+    }
+
+    #[tokio::test]
+    async fn into_protected_router_mounts_auth_guarded_endpoint() {
+        let server = McpServer::new().tool(Search);
+        let router: Router<()> = server.into_protected_router("/mcp", |token| async move {
+            if token == "secret-token" {
+                Ok(hephos_core::Identity::User(hephos_core::Principal {
+                    id: uuid::Uuid::new_v4(),
+                    roles: vec!["agent".into()],
+                }))
+            } else {
+                Err(hephos_core::Error::Unauthorized)
+            }
+        });
+
         let entries = router.entries();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].method, "ANY");

@@ -119,6 +119,29 @@ impl<S: Clone + Send + Sync + 'static> Ctx<S> {
         self.cancel = cancel;
         self
     }
+
+    /// Record an audit event associated with this request context.
+    ///
+    /// Stamped with the current request id, UTC timestamp, and identity.
+    pub fn audit(
+        &self,
+        action: impl Into<String>,
+        resource_type: impl Into<String>,
+        resource_id: Option<impl Into<String>>,
+        outcome: crate::security::AuditOutcome,
+        metadata: serde_json::Value,
+    ) {
+        let event = crate::security::AuditEvent::new(
+            self.request_id,
+            self.identity.clone(),
+            action,
+            resource_type,
+            resource_id,
+            outcome,
+            metadata,
+        );
+        crate::security::record_audit(&event);
+    }
 }
 
 // The context is produced for every request. `S` is supplied by axum's router

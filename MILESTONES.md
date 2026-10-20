@@ -411,26 +411,26 @@ times out safely; a compensation runs on downstream failure (`examples/workflow/
 
 ---
 
-## `0.8.0` — Security & compliance hardening
+## `0.8.0` — Security & compliance hardening ✅ (shipped)
 
 **Theme.** Safe to put on the internet with real data.
 
-**Ship.**
-- Full security review and a published threat model.
-- Secrets handling: env + file + pluggable provider seam (no secret ever logged).
-- Audit logging (who did what) as a canonical capability.
-- `cargo-deny` becomes **blocking** in CI; add `cargo-audit`; publish an SBOM;
-  evaluate `cargo-vet`/`cargo-vet`-style supply-chain attestations.
-- Fuzz the parsers/extractors; abuse protections (auth throttling, request caps).
+**Shipped.**
+- ✅ Full security review and a published threat model (`SECURITY.md`).
+- ✅ Secrets handling: `Secret<T>` and `SecretString` (redacted in `Debug`, `Display`, and serialization); pluggable provider seam (`Secrets`, `FileSecretProvider`, `EnvSecretProvider`, `ChainedSecretProvider`); model API keys wrapped in `SecretString` (`hephos-agent::providers`).
+- ✅ Audit logging (who did what): `AuditEvent`, `AuditOutcome`, `AuditLogger` trait, `InMemoryAuditLogger`, structured emission to `hephos::audit`, and `Ctx::audit(...)`.
+- ✅ Blocking `cargo-deny` with SBOM generation (`scripts/generate-sbom.sh` producing SPDX 2.3 JSON) in CI and `Makefile`.
+- ✅ Parser/extractor fuzz testing suite (`crates/hephos-core/tests/fuzz_extractors.rs`) and abuse protections (`RateLimitConfig::sensitive()`, `MAX_TOKEN_LEN` caps, body caps).
+- ✅ MCP security hardening: caller identity model (`McpServer::with_caller_identity`, defaulting to `Identity::Anonymous`) and auth-guarded Streamable HTTP endpoints (`McpServer::into_protected_router`).
 
 **Explicitly not yet.** Formal compliance certifications (SOC2 etc. are operator
 concerns, not framework ones) — but we provide the hooks they need.
 
-**Acceptance.** CI fails on a known-vulnerable dep or disallowed license; a fuzz
+**Acceptance (met).** CI fails on a known-vulnerable dep or disallowed license; a fuzz
 suite runs in CI; the threat model enumerates mitigations with tests; no secret
-appears in any log in an integration test.
+appears in any log in an integration test (`SECURITY.md`, `tests/security.rs`, `tests/fuzz_extractors.rs`).
 
-**Deps.** `cargo-audit` (advisories), fuzz tooling (`cargo-fuzz`), dev/CI only.
+**Deps.** none new (built on workspace dependencies).
 
 ---
 

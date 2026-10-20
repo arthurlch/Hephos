@@ -1035,6 +1035,7 @@ dependencies = [
  "serde_json",
  "sqlx",
  "thiserror 2.0.21",
+ "time",
  "tokio",
  "tokio-util",
  "tower",
@@ -1066,6 +1067,7 @@ dependencies = [
 name = "hephos-mcp"
 version = "0.1.0"
 dependencies = [
+ "axum",
  "hephos-agent",
  "hephos-core",
  "rmcp",
@@ -1073,7 +1075,9 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tower",
  "tracing",
+ "uuid",
 ]
 
 [[package]]

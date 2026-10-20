@@ -478,19 +478,29 @@ external MCP clients alike.
 
 ---
 
-## 16. Authentication & authorization
+## 16. Authentication, authorization, secrets & audit
 
 - **Authentication** is app-level middleware, layered onto the route groups that
   need it. It validates a bearer token (`jsonwebtoken`, verified against a secret
   from the environment) and replaces the request's default `Identity::Anonymous`
   with `Identity::User(Principal { id, roles })`.
-- **Authorization** is done in handlers and services via `ctx.require_user()?` and
-  `ctx.require_role("admin")?`, which return the narrowest correct error (401 vs
-  403). Fine-grained checks (ownership of a resource) are service-layer decisions,
-  expressed as `Error::Forbidden`.
+- **Authorization** is done in handlers and services via `ctx.require_user()?`,
+  `ctx.require_role("admin")?`, and `ctx.require_owner(owner_id)?`, which return
+  the narrowest correct error (401 vs 403). Fine-grained checks (ownership of a
+  resource) are service-layer decisions, expressed as `Error::Forbidden`.
 - **Passwords** are hashed with `argon2`. Login issues a signed token; Hephos does
-  not store sessions server-side in v1 (stateless tokens), with a revocation list
-  as a future addition if needed.
+  not store sessions server-side in v1 (stateless tokens).
+- **Secrets Management**: Credentials (API keys, database passwords, JWT signing keys)
+  are held in `Secret<T>` and `SecretString`, strictly redacting them from `Debug`,
+  `Display`, and JSON serialization. Secrets are retrieved via the `Secrets` provider
+  seam (`FileSecretProvider` with path traversal protections, `EnvSecretProvider`, and
+  `ChainedSecretProvider`).
+- **Audit Logging**: Security-relevant operations emit structured `AuditEvent` records
+  via `ctx.audit(action, resource_type, resource_id, outcome, metadata)`, binding
+  the caller `Identity`, request ID, timestamp, outcome, and payload. Events are emitted
+  to the `hephos::audit` tracing target or pluggable `AuditLogger` implementations.
+- **Threat Model**: Documented in `SECURITY.md` covering external callers, malicious
+  tenants, compromised model outputs, and supply-chain defenses.
 
 **Why a thin `Principal` (id + roles), not a full user?** Putting the whole user
 record in the identity couples the auth layer to the user schema and tempts stale

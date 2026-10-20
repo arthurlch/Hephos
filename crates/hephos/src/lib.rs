@@ -20,9 +20,11 @@
 #![forbid(unsafe_code)]
 
 pub use hephos_core::{
-    App, CancellationToken, Config, ConnectionCap, ConnectionGuard, Ctx, Error, Event, Events,
-    Identity, Json, LogFormat, Path, Principal, ProbeResponse, Query, RateLimitConfig, RedMetrics,
-    Result, RouteEntry, Router, StatusCode, Task, conn, http, sse, telemetry, test, transport, ws,
+    App, AuditEvent, AuditLogger, AuditOutcome, CancellationToken, Config, ConnectionCap,
+    ConnectionGuard, Ctx, Error, Event, Events, Identity, InMemoryAuditLogger, Json, LogFormat,
+    Path, Principal, ProbeResponse, Query, RateLimitConfig, RedMetrics, Result, RouteEntry, Router,
+    Secret, SecretProvider, SecretString, Secrets, StatusCode, Task, TracingAuditLogger, conn,
+    http, security, sse, telemetry, test, transport, ws,
 };
 
 #[cfg(feature = "db")]
@@ -37,8 +39,9 @@ pub use hephos_mcp as mcp;
 /// The one import every file starts from.
 pub mod prelude {
     pub use hephos_core::{
-        App, ConnectionCap, ConnectionGuard, Ctx, Error, Event, Events, Identity, Json, Path,
-        Principal, Query, Result, Router, StatusCode, Task,
+        App, AuditEvent, AuditOutcome, ConnectionCap, ConnectionGuard, Ctx, Error, Event, Events,
+        Identity, Json, Path, Principal, Query, Result, Router, Secret, SecretString, Secrets,
+        StatusCode, Task,
     };
 
     #[cfg(feature = "db")]

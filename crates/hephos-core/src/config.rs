@@ -73,6 +73,19 @@ impl RateLimitConfig {
     pub fn new(rps: u64, burst: u32) -> Self {
         RateLimitConfig { rps, burst }
     }
+
+    /// Default sensible limit for standard APIs (50 RPS, burst 100).
+    pub fn standard() -> Self {
+        RateLimitConfig {
+            rps: 50,
+            burst: 100,
+        }
+    }
+
+    /// Strict limit for sensitive routes like auth, password reset, or token issuance (5 RPS, burst 10).
+    pub fn sensitive() -> Self {
+        RateLimitConfig { rps: 5, burst: 10 }
+    }
 }
 
 /// How logs are formatted (`HEPHOS_LOG`).

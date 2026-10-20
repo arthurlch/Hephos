@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// Who is making the request.
@@ -9,7 +10,7 @@ use uuid::Uuid;
 /// Hephos deliberately keeps the principal small — an id plus roles. Loading a
 /// full user record is a service concern, done by id when needed. This keeps the
 /// auth layer thin and uniform across every app.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Identity {
     #[default]
     Anonymous,
@@ -17,7 +18,7 @@ pub enum Identity {
 }
 
 /// The authenticated caller.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Principal {
     pub id: Uuid,
     pub roles: Vec<String>,

@@ -132,10 +132,12 @@ jobs:
           cargo test --locked -p example-auth -- --include-ignored
 
   deny:
-    name: cargo-deny
+    name: cargo-deny & sbom
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check
+      - name: Generate and validate SBOM
+        run: ./scripts/generate-sbom.sh
