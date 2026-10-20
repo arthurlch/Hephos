@@ -31,6 +31,15 @@ pub struct Ctx<S> {
     cancel: CancellationToken,
 }
 
+impl<S> std::fmt::Debug for Ctx<S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Ctx")
+            .field("identity", &self.identity)
+            .field("request_id", &self.request_id)
+            .finish_non_exhaustive()
+    }
+}
+
 impl<S: Clone + Send + Sync + 'static> Ctx<S> {
     /// The application state. Services and the database live here.
     pub fn state(&self) -> &S {

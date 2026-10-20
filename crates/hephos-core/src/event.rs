@@ -23,7 +23,7 @@ pub trait Event: Clone + Send + Sync + 'static {}
 ///
 /// This bus is in-process and at-most-once. For transactional, at-least-once
 /// durable delivery across services or worker processes, use the Postgres-backed
-/// outbox pattern ([`hephos_db::Outbox`]). Do not grow this in-process bus into a message queue.
+/// outbox pattern (`hephos_db::Outbox`). Do not grow this in-process bus into a message queue.
 #[derive(Clone)]
 pub struct Events<E: Event> {
     tx: broadcast::Sender<E>,

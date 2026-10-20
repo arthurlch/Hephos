@@ -48,7 +48,7 @@ pub mod prelude {
         ApprovalDecision, ApprovalState, Db, Job, JobOptions, JobRegistry, JobState, JobWorker,
         Jobs, Outbox, OutboxDrain, OutboxEntry, OutboxState, Tx, WorkflowApprovalRecord,
         WorkflowCompensationRecord, WorkflowContext, WorkflowRecord, WorkflowState,
-        WorkflowStepRecord, Workflows,
+        WorkflowStepRecord, Workflows, is_unique_violation,
     };
 
     #[cfg(feature = "agent")]
@@ -72,6 +72,7 @@ pub mod workflow_agent {
     use hephos_db::WorkflowContext;
 
     /// Bridge enabling a [`WorkflowContext`] to provide turn checkpoint persistence for [`hephos_agent::Agent::run_durable`].
+    #[derive(Clone, Debug)]
     pub struct WorkflowAgentCheckpoint {
         context: WorkflowContext,
         prefix: String,

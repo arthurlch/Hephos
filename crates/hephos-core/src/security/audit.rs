@@ -108,11 +108,16 @@ impl InMemoryAuditLogger {
     }
 
     pub fn events(&self) -> Vec<AuditEvent> {
-        self.events.lock().unwrap().clone()
+        self.events
+            .lock()
+            .map(|guard| guard.clone())
+            .unwrap_or_default()
     }
 
     pub fn clear(&self) {
-        self.events.lock().unwrap().clear();
+        if let Ok(mut lock) = self.events.lock() {
+            lock.clear();
+        }
     }
 }
 

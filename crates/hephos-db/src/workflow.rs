@@ -1139,6 +1139,15 @@ pub struct WorkflowContext {
     cancel_token: CancellationToken,
 }
 
+impl std::fmt::Debug for WorkflowContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WorkflowContext")
+            .field("id", &self.id)
+            .field("name", &self.name)
+            .finish()
+    }
+}
+
 impl WorkflowContext {
     /// Construct a new workflow context.
     pub fn new(

@@ -5,14 +5,13 @@ This document explains **what** Hephos is and **why** it is shaped the way it is
 `CONVENTIONS.md` is the mechanical reference. When any two disagree, the
 contradiction is a defect to be fixed, not a choice to be made.
 
-> A note on status: the HTTP core is **implemented** as of `0.0.2` — the standard
-> middleware stack (request id, span, timeout, body limit, cancellation), graceful
-> shutdown, `Config`, and the `TestClient` harness are real and tested. The remaining
-> non-trivial subsystems are still marked `// BOUNDARY:` with a precise description of
-> what remains (`Db::migrate`, the model provider clients, agent tool dispatch, rmcp
-> serving). The `examples/` directory is written against this contract. Nothing here is
-> a fake API — every signature is one a correct implementation can satisfy, and the
-> boundaries say exactly where work remains. See `MILESTONES.md` for the build order.
+> A note on status: as of `1.0.0`, Hephos is **production-ready and stable**. The HTTP
+> core, standard middleware stack (request id, span, timeout, body limit, cancellation),
+> graceful shutdown, `Config`, and `TestClient` harness are real and tested. All subsystems
+> (PostgreSQL migrations, transactions, model provider clients, agent tool dispatch, rmcp
+> serving, durable workflows, background jobs, audit logging, and CLI tools) are fully
+> implemented and tested. No `// BOUNDARY:` markers remain in any shipped crate.
+> See `MILESTONES.md` for the completed build history and release checklist.
 
 ---
 
@@ -419,10 +418,10 @@ the key cut that keeps the agent crate small and reusable.
 or task, under the same tracing span and cancellation token as everything else.
 Dropping a `stream` cancels generation.
 
-**BOUNDARY:** provider HTTP clients, the vendor-specific encoding of tool calls,
-and the structured-output enforcement are marked in `crates/hephos-agent`. The
-trait contracts and the turn-loop algorithm are fixed; the vendor wiring is the
-remaining work.
+**Provider Clients:** model provider HTTP clients (Anthropic, OpenAI, and compatible endpoints),
+the vendor-specific encoding of tool calls, and structured-output enforcement
+are production-implemented in `crates/hephos-agent` with automatic retries,
+rate-limit backoff, and full checkpoint durability.
 
 ---
 
