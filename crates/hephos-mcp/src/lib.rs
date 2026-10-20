@@ -37,7 +37,7 @@ use serde::de::DeserializeOwned;
 /// Implements rmcp's [`ServerHandler`]. Each registered Hephos [`Tool`] is exposed
 /// with its derived `schemars` input schema, with invocations deserializing arguments,
 /// executing [`Tool::call`], and serializing results back to MCP responses.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct McpServer {
     name: String,
     version: String,
@@ -259,6 +259,12 @@ impl ServerHandler for McpServer {
 #[derive(Clone)]
 pub struct McpClient {
     service: Arc<RunningService<RoleClient, ()>>,
+}
+
+impl std::fmt::Debug for McpClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("McpClient").finish_non_exhaustive()
+    }
 }
 
 impl McpClient {

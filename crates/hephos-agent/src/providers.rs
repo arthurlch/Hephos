@@ -68,6 +68,12 @@ impl Model for Anthropic {
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
+            if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                return Err(Error::rate_limited(format!("anthropic rate limit: {body}")));
+            }
+            if status == reqwest::StatusCode::SERVICE_UNAVAILABLE {
+                return Err(Error::unavailable(format!("anthropic unavailable: {body}")));
+            }
             return Err(Error::internal(format!(
                 "anthropic API returned status {status}: {body}"
             )));
@@ -99,6 +105,12 @@ impl Model for Anthropic {
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
+            if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                return Err(Error::rate_limited(format!("anthropic rate limit: {body}")));
+            }
+            if status == reqwest::StatusCode::SERVICE_UNAVAILABLE {
+                return Err(Error::unavailable(format!("anthropic unavailable: {body}")));
+            }
             return Err(Error::internal(format!(
                 "anthropic API returned status {status}: {body}"
             )));
@@ -165,6 +177,12 @@ impl Model for OpenAI {
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
+            if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                return Err(Error::rate_limited(format!("openai rate limit: {body}")));
+            }
+            if status == reqwest::StatusCode::SERVICE_UNAVAILABLE {
+                return Err(Error::unavailable(format!("openai unavailable: {body}")));
+            }
             return Err(Error::internal(format!(
                 "openai API returned status {status}: {body}"
             )));
@@ -198,6 +216,12 @@ impl Model for OpenAI {
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
+            if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                return Err(Error::rate_limited(format!("openai rate limit: {body}")));
+            }
+            if status == reqwest::StatusCode::SERVICE_UNAVAILABLE {
+                return Err(Error::unavailable(format!("openai unavailable: {body}")));
+            }
             return Err(Error::internal(format!(
                 "openai API returned status {status}: {body}"
             )));

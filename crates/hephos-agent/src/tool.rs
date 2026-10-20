@@ -154,6 +154,14 @@ pub struct ToolDefinition {
     >,
 }
 
+impl std::fmt::Debug for ToolDefinition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ToolDefinition")
+            .field("schema", &self.schema)
+            .finish_non_exhaustive()
+    }
+}
+
 impl ToolDefinition {
     /// Wrap a strongly typed [`Tool`].
     pub fn new<T: Tool>(tool: T) -> Self {
@@ -227,7 +235,7 @@ impl ToolDefinition {
 /// Implements "one tool definition, two consumers": register tools once into a
 /// [`Tools`] collection, then pass it to [`crate::Agent::tools`] and
 /// an MCP server (`McpServer::tools`).
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Tools {
     items: Vec<ToolDefinition>,
 }
