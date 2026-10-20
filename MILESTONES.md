@@ -386,24 +386,26 @@ in-process agent with no second implementation; generated OpenAPI validates.
 
 ---
 
-## `0.7.0` — Durable workflows & agent orchestration
+## `0.7.0` — Durable workflows & agent orchestration ✅ (shipped)
 
 **Theme.** Long-running processes that resume after a crash — plain functions, one DB.
 
-**Ship.**
-- **Postgres-checkpointed workflows** (DBOS-style): each step ends in a DB
+**Shipped.**
+- ✅ **Postgres-checkpointed workflows** (DBOS-style): each step ends in a DB
   transaction recording progress; resume reads the last checkpoint. No replay DSL,
-  no determinism constraints, no new infra — consistent with Hephos's philosophy.
-- Durable agent runs (a long agent survives process restarts).
-- Human-in-the-loop approval steps; saga/compensation pattern as canon.
-- Cancellation and timeouts at the workflow and step level.
+  no determinism constraints, no new infra (`hephos_db::workflow`).
+- ✅ Pluggable workflow store (`WorkflowStore`) with `PostgresWorkflowStore` and `InMemoryWorkflowStore`.
+- ✅ Durable agent runs (`Agent::run_durable`, `Agent::run_typed_durable`, `AgentCheckpoint`, `WorkflowAgentCheckpoint`) surviving process crashes.
+- ✅ Human-in-the-loop approval steps (`WorkflowContext::await_approval`, `Workflows::approve`, `Workflows::reject`) with timeout and waking.
+- ✅ Saga/compensation pattern (`WorkflowContext::register_compensation`, `WorkflowContext::compensate`) executing compensating actions in reverse order (LIFO) on failure.
+- ✅ Cancellation and timeouts at the workflow and step level (`step_with_timeout`).
 
 **Explicitly not yet.** Journal/replay engines (Temporal/Restate-style); distributed
 workflow scheduling across clusters.
 
-**Acceptance.** A workflow killed mid-run resumes from its last committed step and
+**Acceptance (met).** A workflow killed mid-run resumes from its last committed step and
 completes exactly-once-effectively; an approval step blocks until a decision and
-times out safely; a compensation runs on downstream failure.
+times out safely; a compensation runs on downstream failure (`examples/workflow/src/tests.rs`).
 
 **Deps.** none new (built on `0.4` jobs + Postgres).
 

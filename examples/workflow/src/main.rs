@@ -4,6 +4,9 @@ mod services;
 mod state;
 mod workflows;
 
+#[cfg(test)]
+mod tests;
+
 use hephos::prelude::*;
 
 use crate::domain::account::NewAccount;
@@ -18,7 +21,8 @@ async fn main() -> Result<()> {
     let input = NewAccount {
         email: "ada@example.com".into(),
     };
-    let onboarded = OnboardingWorkflow.run(&ctx, input).await?;
+    let mut flow = ctx.state().workflows.start("onboarding", &input).await?;
+    let onboarded = OnboardingWorkflow.run(&ctx, &mut flow, input).await?;
 
     println!("{onboarded:#?}");
     Ok(())

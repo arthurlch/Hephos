@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use futures::future::BoxFuture;
 use hephos_core::{CancellationToken, Error, Result};
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
@@ -7,6 +8,49 @@ use serde::de::DeserializeOwned;
 use crate::message::{Message, TextStream};
 use crate::model::{Completion, Model};
 use crate::tool::{Tool, ToolCall, ToolDefinition, ToolResult, ToolSchema, Tools};
+
+/// Checkpoint persistence for durable agent runs.
+pub trait AgentCheckpoint: Send + Sync {
+    /// Load previously recorded messages for a specific turn, if available.
+    fn load_turn(&self, turn: usize) -> BoxFuture<'_, Result<Option<Vec<Message>>>>;
+    /// Save accumulated messages after completing a turn.
+    fn save_turn(&self, turn: usize, messages: Vec<Message>) -> BoxFuture<'_, Result<()>>;
+}
+
+/// In-memory implementation of [`AgentCheckpoint`] for testing and ephemeral workflows.
+#[derive(Debug, Clone, Default)]
+pub struct InMemoryAgentCheckpoint {
+    turns: std::sync::Arc<tokio::sync::RwLock<std::collections::HashMap<usize, Vec<Message>>>>,
+}
+
+impl InMemoryAgentCheckpoint {
+    /// Create a new in-memory agent checkpoint store.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Number of recorded turns.
+    pub async fn turns_count(&self) -> usize {
+        self.turns.read().await.len()
+    }
+}
+
+impl AgentCheckpoint for InMemoryAgentCheckpoint {
+    fn load_turn(&self, turn: usize) -> BoxFuture<'_, Result<Option<Vec<Message>>>> {
+        Box::pin(async move {
+            let guard = self.turns.read().await;
+            Ok(guard.get(&turn).cloned())
+        })
+    }
+
+    fn save_turn(&self, turn: usize, messages: Vec<Message>) -> BoxFuture<'_, Result<()>> {
+        Box::pin(async move {
+            let mut guard = self.turns.write().await;
+            guard.insert(turn, messages);
+            Ok(())
+        })
+    }
+}
 
 /// Bounds on a single agent run. There is no unbounded agent loop in Hephos.
 ///
@@ -107,6 +151,30 @@ impl<M: Model> Agent<M> {
         let schema = serde_json::to_value(schemars::schema_for!(O))
             .map_err(|e| Error::internal(format!("schema for output: {e}")))?;
         let message = self.drive(input, Some(schema)).await?;
+        serde_json::from_str(&message.content)
+            .map_err(|e| Error::internal(format!("model output did not match schema: {e}")))
+    }
+
+    /// Run with durable turn checkpointing. If interrupted, resuming with the same
+    /// checkpoint store skips already-completed turns without re-invoking the model or tools.
+    pub async fn run_durable<C: AgentCheckpoint>(
+        &self,
+        input: &str,
+        checkpoint: &C,
+    ) -> Result<String> {
+        let message = self.drive_durable(input, None, checkpoint).await?;
+        Ok(message.content)
+    }
+
+    /// Run with durable turn checkpointing constrained to structured output `O`.
+    pub async fn run_typed_durable<O: DeserializeOwned + JsonSchema, C: AgentCheckpoint>(
+        &self,
+        input: &str,
+        checkpoint: &C,
+    ) -> Result<O> {
+        let schema = serde_json::to_value(schemars::schema_for!(O))
+            .map_err(|e| Error::internal(format!("schema for output: {e}")))?;
+        let message = self.drive_durable(input, Some(schema), checkpoint).await?;
         serde_json::from_str(&message.content)
             .map_err(|e| Error::internal(format!("model output did not match schema: {e}")))
     }
@@ -242,6 +310,108 @@ impl<M: Model> Agent<M> {
                     }
                 }
                 _ => return Ok(reply),
+            }
+        }
+        Err(Error::internal(format!(
+            "agent exceeded {} turns without a final answer",
+            self.limits.max_turns
+        )))
+    }
+
+    async fn drive_durable<C: AgentCheckpoint>(
+        &self,
+        input: &str,
+        response_schema: Option<serde_json::Value>,
+        checkpoint: &C,
+    ) -> Result<Message> {
+        let turns_fut = self.drive_turns_durable(input, response_schema, checkpoint);
+        let timeout_fut = tokio::time::timeout(self.limits.timeout, turns_fut);
+
+        if let Some(cancel) = &self.cancel_token {
+            tokio::select! {
+                biased;
+                _ = cancel.cancelled() => Err(Error::internal("agent execution cancelled")),
+                res = timeout_fut => match res {
+                    Ok(result) => result,
+                    Err(_) => Err(Error::internal(format!(
+                        "agent exceeded its time limit of {:?}",
+                        self.limits.timeout
+                    ))),
+                }
+            }
+        } else {
+            match timeout_fut.await {
+                Ok(result) => result,
+                Err(_) => Err(Error::internal(format!(
+                    "agent exceeded its time limit of {:?}",
+                    self.limits.timeout
+                ))),
+            }
+        }
+    }
+
+    async fn drive_turns_durable<C: AgentCheckpoint>(
+        &self,
+        input: &str,
+        response_schema: Option<serde_json::Value>,
+        checkpoint: &C,
+    ) -> Result<Message> {
+        let mut messages = vec![Message::user(input)];
+        let mut start_turn = 0;
+
+        // Restore latest saved turn checkpoint, if one exists from a prior execution.
+        for turn in 0..self.limits.max_turns as usize {
+            if let Some(saved) = checkpoint.load_turn(turn).await? {
+                messages = saved;
+                start_turn = turn + 1;
+            } else {
+                break;
+            }
+        }
+
+        // If the restored messages ended on a final answer (not tool execution), return it directly.
+        if start_turn > 0 {
+            if let Some(last) = messages.last() {
+                if last.role == crate::message::Role::Assistant && parse_tool_calls(last).is_none()
+                {
+                    return Ok(last.clone());
+                }
+            }
+        }
+
+        let tool_schemas = self.tool_schemas();
+        for turn in start_turn..self.limits.max_turns as usize {
+            let _turn_span = tracing::info_span!("agent.turn", turn = turn).entered();
+            let completion = Completion {
+                system: self.system.clone(),
+                messages: messages.clone(),
+                tools: tool_schemas.clone(),
+                max_tokens: self.limits.max_tokens,
+                response_schema: response_schema.clone(),
+            };
+            let reply = self.model.complete(completion).await?;
+
+            match parse_tool_calls(&reply) {
+                Some(calls) if !calls.is_empty() => {
+                    if calls.len() > self.limits.max_tool_calls_per_turn {
+                        return Err(Error::invalid(format!(
+                            "model requested {} tool calls, exceeding the limit of {}",
+                            calls.len(),
+                            self.limits.max_tool_calls_per_turn
+                        )));
+                    }
+                    messages.push(reply);
+                    for call in calls {
+                        let result = self.dispatch(call).await?;
+                        messages.push(tool_result_message(&result)?);
+                    }
+                    checkpoint.save_turn(turn, messages.clone()).await?;
+                }
+                _ => {
+                    messages.push(reply.clone());
+                    checkpoint.save_turn(turn, messages.clone()).await?;
+                    return Ok(reply);
+                }
             }
         }
         Err(Error::internal(format!(
@@ -449,5 +619,83 @@ mod tests {
         let err = agent.run("hello").await.unwrap_err();
         assert!(matches!(err, Error::Internal(_)));
         assert!(err.to_string().contains("cancelled"));
+    }
+
+    #[derive(Clone)]
+    struct MultiTurnModel {
+        turns: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    impl Model for MultiTurnModel {
+        async fn complete(&self, _request: Completion) -> Result<Message> {
+            let turn = self.turns.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if turn == 0 {
+                let call = ToolCall {
+                    id: "call_inc".into(),
+                    name: "inc".into(),
+                    input: serde_json::json!({}),
+                };
+                let mut msg = Message::assistant("calling increment");
+                msg.tool_calls.push(call);
+                Ok(msg)
+            } else {
+                Ok(Message::assistant("increment completed successfully"))
+            }
+        }
+
+        async fn stream(&self, _request: Completion) -> Result<TextStream> {
+            Ok(Box::pin(futures::stream::empty()))
+        }
+    }
+
+    #[derive(Clone)]
+    struct IncTool {
+        counter: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    impl Tool for IncTool {
+        type Input = serde_json::Value;
+        type Output = usize;
+
+        const NAME: &'static str = "inc";
+        const DESCRIPTION: &'static str = "increments counter";
+
+        async fn call(&self, _input: Self::Input) -> Result<Self::Output> {
+            Ok(self
+                .counter
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                + 1)
+        }
+    }
+
+    #[tokio::test]
+    async fn agent_durable_resumes_from_saved_turn_without_reexecuting_tools() {
+        let counter = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let model = MultiTurnModel {
+            turns: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        };
+
+        let tool = IncTool {
+            counter: counter.clone(),
+        };
+
+        let checkpoint = InMemoryAgentCheckpoint::new();
+
+        // Run 1: completes both turns
+        let agent1 = Agent::new(model.clone()).tool(tool);
+        let res1 = agent1.run_durable("start", &checkpoint).await.unwrap();
+        assert_eq!(res1, "increment completed successfully");
+        assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(checkpoint.turns_count().await, 2);
+
+        // Run 2: same checkpoint, tool must NOT be called again
+        let tool2 = IncTool {
+            counter: counter.clone(),
+        };
+        let agent2 = Agent::new(model.clone()).tool(tool2);
+        let res2 = agent2.run_durable("start", &checkpoint).await.unwrap();
+        assert_eq!(res2, "increment completed successfully");
+        // Tool counter is still 1!
+        assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 }

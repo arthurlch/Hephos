@@ -6,8 +6,9 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
-hephos = { workspace = true, features = ["agent"] }
+hephos = { workspace = true, features = ["db", "agent"] }
 tokio = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 futures = { workspace = true }
 uuid = { workspace = true }

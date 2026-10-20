@@ -445,16 +445,16 @@ functions.
 ## 14. Workflow architecture
 
 A workflow is a **deterministic** orchestration of services and agents, written as
-ordinary Rust: a struct with a `run(ctx, input) -> Result<Output>` method whose
+ordinary Rust: a struct with a `run(ctx, flow, input) -> Result<Output>` method whose
 body calls services and agents in sequence, with explicit state, explicit failure
-handling, and explicit cancellation points. Steps are private methods.
+handling, and explicit cancellation points.
 
-Hephos v1 does **not** ship a durable workflow engine (no event-sourced replay, no
-distributed saga runtime). That is the correct deferral: durable execution is a
-large stateful subsystem, and most workflows are a bounded sequence of steps that
-a plain async function expresses more legibly than a DSL. The architecture marks
-durable execution as a future, additive layer (see `MILESTONES.md`), reachable without
-changing the `run(ctx, input)` shape.
+Hephos ships a **Postgres-checkpointed durable workflow layer** (DBOS-style) rather than
+an event-sourced replay engine. Each step is committed to the database upon completion.
+If a worker crashes or is cancelled mid-run, resuming the workflow reads the committed
+checkpoints and skips previously executed steps without re-executing side effects or
+re-running tool calls. Sagas register compensations that execute in reverse order (LIFO)
+on downstream failure, and human-in-the-loop approvals pause execution until resolved.
 
 **Why functions, not a DSL?** An agent reads a plain async function and knows
 exactly what happens, in order. A workflow DSL introduces a second control-flow

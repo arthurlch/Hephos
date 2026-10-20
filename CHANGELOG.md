@@ -3,6 +3,25 @@
 All notable changes to Hephos are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer.
 
+## [0.7.0] - 2026-10-20
+
+### Added
+- **Durable Postgres-Checkpointed Workflows (`hephos-db::workflow`)**:
+  - DBOS-style Postgres-checkpointed durable workflow engine recording step outputs and state transitions in `hephos_workflows`, `hephos_workflow_steps`, `hephos_workflow_approvals`, and `hephos_workflow_compensations`.
+  - Memoized step executions (`WorkflowContext::step`) skipping already-committed steps on process restart/resumption.
+  - Step wall-clock timeout bounds (`WorkflowContext::step_with_timeout`).
+  - Pluggable storage via `WorkflowStore` with `PostgresWorkflowStore` and fast zero-infrastructure `InMemoryWorkflowStore`.
+  - Workflow orchestrator handle (`Workflows`) on `Db` providing `start`, `start_with_id`, `resume`, `approve`, `reject`, `cancel`, `get`, `steps`, `approvals`, and `compensations`.
+- **Human-in-the-Loop Approvals & Saga Compensations (`WorkflowContext`)**:
+  - Asynchronous human-in-the-loop approval points (`await_approval`) with configurable timeouts and external wake triggers.
+  - Saga compensation pattern (`register_compensation` and `compensate`) rolling back side effects in LIFO reverse order on downstream step failures.
+- **Durable Agent Checkpointing (`hephos-agent`, `hephos`)**:
+  - `AgentCheckpoint` trait and `InMemoryAgentCheckpoint` enabling multi-turn durable agent execution (`Agent::run_durable`, `Agent::run_typed_durable`). Resumes from the last completed turn without re-invoking models or tools.
+  - `WorkflowAgentCheckpoint` and `WorkflowAgentExt` in `hephos` meta-crate bridging `WorkflowContext` to `AgentCheckpoint` (`flow.agent_checkpoint("step_name")`).
+- **Workflow Example & Integration Tests (`examples/workflow`)**:
+  - Complete user onboarding workflow demonstrating crash-resilient multi-step execution, KYC human approval, welcome email agent generation, and saga compensation on provision failure.
+  - Comprehensive unit and integration test suites in `examples/workflow/src/tests.rs` and `crates/hephos-db/src/workflow.rs`.
+
 ## [0.6.0] - 2026-10-20
 
 ### Added
