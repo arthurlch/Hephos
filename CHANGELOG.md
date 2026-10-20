@@ -3,6 +3,29 @@
 All notable changes to Hephos are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer.
 
+## [0.9.0] - 2026-10-20
+
+### Added
+- **Performance Benchmarks & Overhead Analysis (`benches/overhead.rs`, `PERFORMANCE.md`)**:
+  - Criterion microbenchmark suite measuring raw Axum vs Hephos standard Tower stack (request ID, tracing, timeout, body limit, catch panic, and RED metrics).
+  - Measured negligible overhead (~4.8 µs per request, <0.1% of real-world network latency) and demonstrated peak single-core throughput exceeding 175,000 req/sec.
+  - Added `make bench` target in `Makefile`.
+- **Canonical Reference Application (`examples/reference-app`)**:
+  - Full-featured production reference application combining REST, Postgres SQL repositories, Argon2/JWT authentication, background retention reapers, in-process domain events, durable checkpointed workflows, and agents with tools and MCP.
+  - Fully compliant with `AGENTS.md §1-4` architecture, tested offline via `TestClient`.
+- **Operational Scaling & Postgres Validation (`docs/scaling.md`)**:
+  - Validated the "everything-on-Postgres" bet under scale.
+  - Detailed connection pool tuning, PgBouncer transaction pooling recommendations, statement timeouts, autovacuum tuning, and empirical thresholds for when to offload concerns.
+- **Multi-Instance Readiness & 12-Factor Deployment**:
+  - Multi-stage distroless `Dockerfile` running as non-root user (`UID 65532`).
+  - Kubernetes production manifests (`deploy/k8s/`): Deployment with rolling updates, Service, HPA, PDB, and ConfigMap.
+  - Multi-instance `deploy/docker-compose.yml` with Nginx reverse proxy load balancing between instances.
+  - 12-factor operations guide (`docs/deployment.md`) documenting zero-downtime rolling restarts and graceful draining.
+- **API-Freeze Candidate & Migration Guide (`API_FREEZE.md`)**:
+  - Formalized SemVer 2.0 commitments, public API boundaries, deprecation policy (>= 1 minor release), and `0.x -> 1.0` migration guide.
+- **Agent Send Safety Fix (`hephos-agent`)**:
+  - Replaced thread-local `tracing::span::Entered` guards in agent turn loops and tool dispatch with `.instrument()`, guaranteeing all `Agent::run` futures are `Send`.
+
 ## [0.8.0] - 2026-10-20
 
 ### Added

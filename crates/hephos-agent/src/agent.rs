@@ -8,6 +8,7 @@ use serde::de::DeserializeOwned;
 use crate::message::{Message, TextStream};
 use crate::model::{Completion, Model};
 use crate::tool::{Tool, ToolCall, ToolDefinition, ToolResult, ToolSchema, Tools};
+use tracing::Instrument;
 
 /// Checkpoint persistence for durable agent runs.
 pub trait AgentCheckpoint: Send + Sync {
@@ -196,7 +197,7 @@ impl<M: Model> Agent<M> {
             let mut messages = vec![Message::user(input)];
             let tool_schemas = self.tool_schemas();
             for turn in 0..self.limits.max_turns {
-                let _turn_span = tracing::info_span!("agent.turn", turn = turn).entered();
+                let turn_span = tracing::info_span!("agent.turn", turn = turn);
                 let completion = Completion {
                     system: self.system.clone(),
                     messages: messages.clone(),
@@ -204,7 +205,11 @@ impl<M: Model> Agent<M> {
                     max_tokens: self.limits.max_tokens,
                     response_schema: None,
                 };
-                let reply = self.model.complete(completion).await?;
+                let reply = self
+                    .model
+                    .complete(completion)
+                    .instrument(turn_span.clone())
+                    .await?;
                 match parse_tool_calls(&reply) {
                     Some(calls) if !calls.is_empty() => {
                         if calls.len() > self.limits.max_tool_calls_per_turn {
@@ -216,7 +221,7 @@ impl<M: Model> Agent<M> {
                         }
                         messages.push(reply);
                         for call in calls {
-                            let result = self.dispatch(call).await?;
+                            let result = self.dispatch(call).instrument(turn_span.clone()).await?;
                             messages.push(tool_result_message(&result)?);
                         }
                     }
@@ -284,7 +289,7 @@ impl<M: Model> Agent<M> {
         let mut messages = vec![Message::user(input)];
         let tool_schemas = self.tool_schemas();
         for turn in 0..self.limits.max_turns {
-            let _turn_span = tracing::info_span!("agent.turn", turn = turn).entered();
+            let turn_span = tracing::info_span!("agent.turn", turn = turn);
             let completion = Completion {
                 system: self.system.clone(),
                 messages: messages.clone(),
@@ -292,7 +297,11 @@ impl<M: Model> Agent<M> {
                 max_tokens: self.limits.max_tokens,
                 response_schema: response_schema.clone(),
             };
-            let reply = self.model.complete(completion).await?;
+            let reply = self
+                .model
+                .complete(completion)
+                .instrument(turn_span.clone())
+                .await?;
 
             match parse_tool_calls(&reply) {
                 Some(calls) if !calls.is_empty() => {
@@ -305,7 +314,7 @@ impl<M: Model> Agent<M> {
                     }
                     messages.push(reply);
                     for call in calls {
-                        let result = self.dispatch(call).await?;
+                        let result = self.dispatch(call).instrument(turn_span.clone()).await?;
                         messages.push(tool_result_message(&result)?);
                     }
                 }
@@ -381,7 +390,7 @@ impl<M: Model> Agent<M> {
 
         let tool_schemas = self.tool_schemas();
         for turn in start_turn..self.limits.max_turns as usize {
-            let _turn_span = tracing::info_span!("agent.turn", turn = turn).entered();
+            let turn_span = tracing::info_span!("agent.turn", turn = turn);
             let completion = Completion {
                 system: self.system.clone(),
                 messages: messages.clone(),
@@ -389,7 +398,11 @@ impl<M: Model> Agent<M> {
                 max_tokens: self.limits.max_tokens,
                 response_schema: response_schema.clone(),
             };
-            let reply = self.model.complete(completion).await?;
+            let reply = self
+                .model
+                .complete(completion)
+                .instrument(turn_span.clone())
+                .await?;
 
             match parse_tool_calls(&reply) {
                 Some(calls) if !calls.is_empty() => {
@@ -402,7 +415,7 @@ impl<M: Model> Agent<M> {
                     }
                     messages.push(reply);
                     for call in calls {
-                        let result = self.dispatch(call).await?;
+                        let result = self.dispatch(call).instrument(turn_span.clone()).await?;
                         messages.push(tool_result_message(&result)?);
                     }
                     checkpoint.save_turn(turn, messages.clone()).await?;
@@ -421,8 +434,8 @@ impl<M: Model> Agent<M> {
     }
 
     async fn dispatch(&self, call: ToolCall) -> Result<ToolResult> {
-        let _span = tracing::info_span!("agent.tool", tool = %call.name).entered();
-        self.tools.dispatch(call).await
+        let span = tracing::info_span!("agent.tool", tool = %call.name);
+        self.tools.dispatch(call).instrument(span).await
     }
 }
 
