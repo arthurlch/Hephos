@@ -22,8 +22,8 @@ pub use hephos_core::{
     App, AuditEvent, AuditLogger, AuditOutcome, CancellationToken, Config, ConnectionCap,
     ConnectionGuard, Ctx, Error, Event, Events, Identity, InMemoryAuditLogger, Json, LogFormat,
     Path, Principal, ProbeResponse, Query, RateLimitConfig, RedMetrics, Result, RouteEntry, Router,
-    Secret, SecretProvider, SecretString, Secrets, StatusCode, Task, TracingAuditLogger, conn,
-    http, security, sse, telemetry, test, transport, ws,
+    Secret, SecretProvider, SecretString, Secrets, StatusCode, Task, TracingAuditLogger, Uuid,
+    conn, http, security, sse, telemetry, test, transport, uuid, ws,
 };
 
 #[cfg(feature = "db")]
@@ -40,7 +40,7 @@ pub mod prelude {
     pub use hephos_core::{
         App, AuditEvent, AuditOutcome, ConnectionCap, ConnectionGuard, Ctx, Error, Event, Events,
         Identity, Json, Path, Principal, Query, Result, Router, Secret, SecretString, Secrets,
-        StatusCode, Task,
+        StatusCode, Task, Uuid,
     };
 
     #[cfg(feature = "db")]
@@ -48,7 +48,7 @@ pub mod prelude {
         ApprovalDecision, ApprovalState, Db, Job, JobOptions, JobRegistry, JobState, JobWorker,
         Jobs, Outbox, OutboxDrain, OutboxEntry, OutboxState, Tx, WorkflowApprovalRecord,
         WorkflowCompensationRecord, WorkflowContext, WorkflowRecord, WorkflowState,
-        WorkflowStepRecord, Workflows, is_unique_violation,
+        WorkflowStepRecord, Workflows, is_unique_violation, sqlx,
     };
 
     #[cfg(feature = "agent")]

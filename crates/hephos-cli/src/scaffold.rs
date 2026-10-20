@@ -71,7 +71,14 @@ pub fn scaffold_app(name: &str, target_dir: &Path, local_hephos_path: Option<&Pa
 
     let hephos_dep = match local_hephos_path {
         Some(path) => {
-            let path_str = path.display().to_string().replace('\\', "/");
+            let abs_path = if path.is_absolute() {
+                path.to_path_buf()
+            } else {
+                std::env::current_dir()
+                    .map(|cd| cd.join(path))
+                    .unwrap_or_else(|_| path.to_path_buf())
+            };
+            let path_str = abs_path.display().to_string().replace('\\', "/");
             format!("hephos = {{ path = \"{path_str}\" }}")
         }
         None => "hephos = { version = \"1.0.0\" }".to_string(),
@@ -210,8 +217,7 @@ impl HelloService {
     fs::write(services_dir.join("hello.rs"), services_hello_rs)?;
 
     // 11. src/tests.rs
-    let tests_rs = r#"use hephos::prelude::*;
-use hephos::test::TestClient;
+    let tests_rs = r#"use hephos::test::TestClient;
 
 use crate::domain::hello::Greeting;
 use crate::state::AppState;

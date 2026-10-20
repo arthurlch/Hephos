@@ -176,8 +176,8 @@ pub fn run_doctor(project_root: &Path) -> Result<Vec<DiagnosticItem>> {
     }
 
     // 5. Check Git repository
-    let git_dir = project_root.join(".git");
-    if git_dir.exists() {
+    let is_git = project_root.ancestors().any(|p| p.join(".git").exists());
+    if is_git {
         diagnostics.push(DiagnosticItem {
             name: "Version control (git)",
             status: DiagnosticStatus::Ok,

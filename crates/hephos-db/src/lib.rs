@@ -20,6 +20,7 @@ pub mod workflow;
 
 pub use jobs::{Job, JobOptions, JobRegistry, JobState, JobWorker, Jobs};
 pub use outbox::{Outbox, OutboxDrain, OutboxEntry, OutboxState};
+pub use sqlx;
 pub use workflow::{
     ApprovalDecision, ApprovalState, WorkflowApprovalRecord, WorkflowCompensationRecord,
     WorkflowContext, WorkflowRecord, WorkflowState, WorkflowStepRecord, Workflows,
