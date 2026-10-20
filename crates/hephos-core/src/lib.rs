@@ -17,6 +17,7 @@ mod event;
 mod extract;
 mod identity;
 mod router;
+pub mod security;
 mod stack;
 mod task;
 pub mod telemetry;
@@ -30,6 +31,10 @@ pub use event::{Event, Events};
 pub use extract::{Json, Path, Query};
 pub use identity::{Identity, Principal};
 pub use router::{RouteEntry, Router};
+pub use security::{
+    AuditEvent, AuditLogger, AuditOutcome, InMemoryAuditLogger, Secret, SecretProvider,
+    SecretString, Secrets, TracingAuditLogger,
+};
 pub use task::Task;
 pub use telemetry::RedMetrics;
 

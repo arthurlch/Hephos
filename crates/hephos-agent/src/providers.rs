@@ -6,6 +6,7 @@
 //! [`crate::TextStream`].
 
 use futures::StreamExt;
+use hephos_core::security::SecretString;
 use hephos_core::{Error, Result};
 use serde::{Deserialize, Serialize};
 
@@ -14,8 +15,9 @@ use crate::model::{Completion, Model};
 use crate::tool::ToolCall;
 
 /// Anthropic Messages API client.
+#[derive(Debug)]
 pub struct Anthropic {
-    api_key: String,
+    api_key: SecretString,
     model: String,
     base_url: String,
     http: reqwest::Client,
@@ -30,7 +32,7 @@ impl Anthropic {
     }
 
     /// Construct with an explicit API key and model name.
-    pub fn new(api_key: impl Into<String>, model: impl Into<String>) -> Self {
+    pub fn new(api_key: impl Into<SecretString>, model: impl Into<String>) -> Self {
         Anthropic {
             api_key: api_key.into(),
             model: model.into(),
@@ -55,7 +57,7 @@ impl Model for Anthropic {
         let resp = self
             .http
             .post(&url)
-            .header("x-api-key", &self.api_key)
+            .header("x-api-key", self.api_key.expose_secret())
             .header("anthropic-version", "2023-06-01")
             .header("content-type", "application/json")
             .json(&payload)
@@ -86,7 +88,7 @@ impl Model for Anthropic {
         let resp = self
             .http
             .post(&url)
-            .header("x-api-key", &self.api_key)
+            .header("x-api-key", self.api_key.expose_secret())
             .header("anthropic-version", "2023-06-01")
             .header("content-type", "application/json")
             .json(&payload)
@@ -107,8 +109,9 @@ impl Model for Anthropic {
 }
 
 /// OpenAI Chat Completions API client.
+#[derive(Debug)]
 pub struct OpenAI {
-    api_key: String,
+    api_key: SecretString,
     model: String,
     base_url: String,
     http: reqwest::Client,
@@ -125,7 +128,7 @@ impl OpenAI {
     }
 
     /// Construct with an explicit API key and model name.
-    pub fn new(api_key: impl Into<String>, model: impl Into<String>) -> Self {
+    pub fn new(api_key: impl Into<SecretString>, model: impl Into<String>) -> Self {
         OpenAI {
             api_key: api_key.into(),
             model: model.into(),
@@ -149,7 +152,10 @@ impl Model for OpenAI {
         let resp = self
             .http
             .post(&url)
-            .header("authorization", format!("Bearer {}", self.api_key))
+            .header(
+                "authorization",
+                format!("Bearer {}", self.api_key.expose_secret()),
+            )
             .header("content-type", "application/json")
             .json(&payload)
             .send()
@@ -179,7 +185,10 @@ impl Model for OpenAI {
         let resp = self
             .http
             .post(&url)
-            .header("authorization", format!("Bearer {}", self.api_key))
+            .header(
+                "authorization",
+                format!("Bearer {}", self.api_key.expose_secret()),
+            )
             .header("content-type", "application/json")
             .json(&payload)
             .send()
@@ -695,5 +704,18 @@ mod tests {
         assert_eq!(payload.model, "gpt-4o");
         assert!(payload.response_format.is_some());
         assert_eq!(payload.messages.len(), 2); // system + user
+    }
+
+    #[test]
+    fn providers_api_key_redaction_in_debug() {
+        let anthropic = Anthropic::new("sk-ant-sensitive-secret-token", "claude-3-5-sonnet");
+        let debug_anthropic = format!("{anthropic:?}");
+        assert!(!debug_anthropic.contains("sk-ant-sensitive-secret-token"));
+        assert!(debug_anthropic.contains("[REDACTED]"));
+
+        let openai = OpenAI::new("sk-proj-sensitive-secret-token", "gpt-4o");
+        let debug_openai = format!("{openai:?}");
+        assert!(!debug_openai.contains("sk-proj-sensitive-secret-token"));
+        assert!(debug_openai.contains("[REDACTED]"));
     }
 }

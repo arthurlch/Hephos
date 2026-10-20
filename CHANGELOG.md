@@ -3,6 +3,28 @@
 All notable changes to Hephos are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer.
 
+## [0.8.0] - 2026-10-20
+
+### Added
+- **Secrets Management & Redaction (`hephos-core::security::secret`)**:
+  - `Secret<T>` and `SecretString` (`Secret<String>`) wrapping sensitive credentials, tokens, and keys.
+  - Strict redaction in `fmt::Debug`, `fmt::Display`, and Serde serialization outputting `[REDACTED]`, while allowing explicit exposure via `.expose_secret()`.
+  - `SecretProvider` trait with `EnvSecretProvider`, `FileSecretProvider` (with path traversal security bounds), and `ChainedSecretProvider`.
+  - `Secrets` manager handle with `.get()` and `.require()` methods.
+  - Wrapped model API keys in `SecretString` across `hephos_agent::providers::Anthropic` and `OpenAI`.
+- **Audit Logging Subsystem (`hephos-core::security::audit`)**:
+  - `AuditEvent` records tracking actor `Identity`, UTC timestamp, request ID, action name, resource type/ID, outcome (`Success`, `Denied`, `Failed`), and metadata.
+  - `AuditLogger` trait with default `TracingAuditLogger` (emitting structured log fields to `hephos::audit` target at `INFO` level) and `InMemoryAuditLogger` for testing and compliance.
+  - Contextual audit integration via `ctx.audit(...)`.
+- **Tool & MCP Boundary Security Hardening (`hephos-mcp`)**:
+  - Added caller identity model to `McpServer` (`with_caller_identity`), defaulting strictly to `Identity::Anonymous` for safe external access.
+  - Added `McpServer::into_protected_router` mounting Streamable HTTP services behind token authentication to mitigate DNS rebinding and enforce transport access control.
+- **Supply Chain, SBOM & Fuzz Testing**:
+  - Added SPDX 2.3 JSON Software Bill of Materials (SBOM) generator script (`scripts/generate-sbom.sh`) integrated into `Makefile` (`make sbom`) and CI.
+  - Published comprehensive `SECURITY.md` detailing architecture invariants, threat actors, assets, and threat mitigation matrix.
+  - Added parser/extractor fuzz test suite in `crates/hephos-core/tests/fuzz_extractors.rs` verifying input validation, size caps, and error opacity.
+  - Added sensitive route rate-limiting preset (`RateLimitConfig::sensitive()`).
+
 ## [0.7.0] - 2026-10-20
 
 ### Added

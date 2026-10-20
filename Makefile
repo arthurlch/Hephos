@@ -27,6 +27,10 @@ arch-lint:
 deny:
 	cargo deny check
 
+## sbom: generate Software Bill of Materials (SPDX 2.3 JSON)
+sbom:
+	./scripts/generate-sbom.sh
+
 test:
 	cargo test --locked --all-features $(OFFLINE)
 

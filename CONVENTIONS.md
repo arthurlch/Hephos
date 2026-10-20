@@ -475,7 +475,40 @@ pub async fn serve(db: hephos::db::Db) -> Result<()> {
 }
 ```
 
-### 2.13 Escape hatches — when a handler isn't `Result<Json<T>>`
+### 2.13 Secrets and Audit Logging
+
+#### Secrets
+Never store credentials or API keys as raw `String`s. Wrap sensitive values in `SecretString`
+or `Secret<T>`. This ensures `[REDACTED]` is output in `Debug`, `Display`, and JSON serialization:
+
+```rust
+use hephos::prelude::*;
+
+// Loading application credentials
+let secrets = Secrets::standard();
+let api_key = secrets.require("ANTHROPIC_API_KEY")?;
+
+// Explicit exposure only when constructing headers or requests
+let raw_key = api_key.expose_secret();
+```
+
+#### Audit Logging
+Security-sensitive events (logins, password updates, human approvals, resource deletions)
+must emit structured audit records via `ctx.audit(...)`:
+
+```rust
+use hephos::security::AuditOutcome;
+
+ctx.audit(
+    "user.password_change",
+    "user",
+    Some(user_id.to_string()),
+    AuditOutcome::Success,
+    serde_json::json!({ "ip": "10.0.0.1" }),
+);
+```
+
+### 2.14 Escape hatches — when a handler isn't `Result<Json<T>>`
 
 The canonical handler is `async fn h(ctx: Ctx, Json(x): Json<In>) -> Result<Json<Out>>`.
 That covers ~80% of endpoints. For the rest, these are the **sanctioned** shapes — pick
