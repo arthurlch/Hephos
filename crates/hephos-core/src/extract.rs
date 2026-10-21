@@ -16,6 +16,27 @@ use crate::error::Error;
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Json<T>(pub T);
 
+impl<T> Json<T> {
+    /// Consume the extractor and return the inner value.
+    pub fn into_inner(self) -> T {
+        self.0
+    }
+}
+
+impl<T> std::ops::Deref for Json<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T> std::ops::DerefMut for Json<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 impl<T, S> FromRequest<S> for Json<T>
 where
     T: DeserializeOwned,
@@ -44,6 +65,27 @@ impl<T: Serialize> IntoResponse for Json<T> {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Path<T>(pub T);
 
+impl<T> Path<T> {
+    /// Consume the extractor and return the inner value.
+    pub fn into_inner(self) -> T {
+        self.0
+    }
+}
+
+impl<T> std::ops::Deref for Path<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T> std::ops::DerefMut for Path<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 impl<T, S> FromRequestParts<S> for Path<T>
 where
     T: DeserializeOwned + Send,
@@ -62,6 +104,27 @@ where
 /// Typed query string, e.g. `Query(filter): Query<ListFilter>`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Query<T>(pub T);
+
+impl<T> Query<T> {
+    /// Consume the extractor and return the inner value.
+    pub fn into_inner(self) -> T {
+        self.0
+    }
+}
+
+impl<T> std::ops::Deref for Query<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T> std::ops::DerefMut for Query<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
 
 impl<T, S> FromRequestParts<S> for Query<T>
 where
@@ -208,5 +271,34 @@ mod tests {
             err.to_string(),
             Error::invalid("invalid query string").to_string()
         );
+    }
+
+    #[test]
+    fn extractor_deref_and_into_inner() {
+        let mut json = Json(UserPayload {
+            name: "Bob".into(),
+            age: 25,
+        });
+        assert_eq!(json.name, "Bob");
+        assert_eq!(json.age, 25);
+        json.age = 26;
+        assert_eq!(json.age, 26);
+        let inner = json.into_inner();
+        assert_eq!(inner.name, "Bob");
+
+        let mut path = Path(42u32);
+        assert_eq!(*path, 42);
+        *path = 43;
+        assert_eq!(*path, 43);
+        assert_eq!(path.into_inner(), 43);
+
+        let mut query = Query(QueryParams {
+            search: "test".into(),
+            limit: 5,
+        });
+        assert_eq!(query.search, "test");
+        query.limit = 10;
+        assert_eq!(query.limit, 10);
+        assert_eq!(query.into_inner().limit, 10);
     }
 }
