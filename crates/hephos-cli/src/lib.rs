@@ -15,6 +15,6 @@ pub mod scaffold;
 
 pub use check::{ArchViolation, check_project};
 pub use doctor::{DiagnosticItem, DiagnosticStatus, run_doctor};
-pub use generate::generate_resource;
+pub use generate::{generate_migration, generate_resource};
 pub use routes::{DiscoveredRoute, format_json, format_table, generate_openapi, scan_routes};
 pub use scaffold::scaffold_app;

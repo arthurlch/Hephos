@@ -195,6 +195,33 @@ impl<M: Model> Agent<M> {
     /// generation. For tool-using agents, runs the tool dispatch loop until no
     /// further tools are called, then streams the final turn.
     pub async fn stream(&self, input: &str) -> Result<TextStream> {
+        let stream_fut = self.drive_stream(input);
+        let timeout_fut = tokio::time::timeout(self.limits.timeout, stream_fut);
+
+        if let Some(cancel) = &self.cancel_token {
+            tokio::select! {
+                biased;
+                _ = cancel.cancelled() => Err(Error::internal("agent execution cancelled")),
+                res = timeout_fut => match res {
+                    Ok(result) => result,
+                    Err(_) => Err(Error::internal(format!(
+                        "agent exceeded its time limit of {:?}",
+                        self.limits.timeout
+                    ))),
+                }
+            }
+        } else {
+            match timeout_fut.await {
+                Ok(result) => result,
+                Err(_) => Err(Error::internal(format!(
+                    "agent exceeded its time limit of {:?}",
+                    self.limits.timeout
+                ))),
+            }
+        }
+    }
+
+    async fn drive_stream(&self, input: &str) -> Result<TextStream> {
         if self.tools.is_empty() {
             let completion = Completion {
                 system: self.system.clone(),
@@ -901,5 +928,17 @@ mod tests {
         let agent = Agent::new(RecoveryModel).tool(LookupTool);
         let res = agent.run("lookup something").await.unwrap();
         assert_eq!(res, "recovered and found fallback");
+    }
+
+    #[tokio::test]
+    async fn stream_cancellation_honors_cancel_token() {
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        let agent = Agent::new(RecoveryModel).cancel_token(cancel);
+        let err = match agent.stream("hello").await {
+            Ok(_) => panic!("expected stream to fail when cancelled"),
+            Err(e) => e,
+        };
+        assert!(err.to_string().contains("cancelled"));
     }
 }

@@ -332,6 +332,11 @@ pub fn is_unique_violation(error: &sqlx::Error) -> bool {
     matches!(error, sqlx::Error::Database(db) if db.code().as_deref() == Some("23505"))
 }
 
+/// Whether a SQLx error is a Postgres foreign-key-constraint violation (SQLSTATE `23503`).
+pub fn is_foreign_key_violation(error: &sqlx::Error) -> bool {
+    matches!(error, sqlx::Error::Database(db) if db.code().as_deref() == Some("23503"))
+}
+
 /// Every SQLx error is an internal error. Not-found is expressed by the
 /// repository (via `fetch_optional` returning `None`), never by leaking
 /// `RowNotFound` — so "missing row" and "database is down" stay distinct.
@@ -422,6 +427,8 @@ mod tests {
     fn is_unique_violation_returns_false_for_non_db_errors() {
         assert!(!is_unique_violation(&sqlx::Error::RowNotFound));
         assert!(!is_unique_violation(&sqlx::Error::PoolClosed));
+        assert!(!is_foreign_key_violation(&sqlx::Error::RowNotFound));
+        assert!(!is_foreign_key_violation(&sqlx::Error::PoolClosed));
     }
 
     #[tokio::test]

@@ -414,6 +414,33 @@ async fn unauthenticated_access_rejected() {
 
 ---
 
+### Recipe 7: Scaffolding Resources & Migrations with Hephos CLI
+
+When creating a new domain entity or schema migration, use `hephos` CLI commands to generate the boilerplate and wire AppState and Router automatically:
+
+#### 1. Generate a Full Stack Resource
+```sh
+# Scaffolds domain, repo, service, handler, migration, and wires state.rs and api.rs:
+hephos generate resource item
+```
+Creates:
+- `src/domain/item.rs`
+- `src/repos/items.rs`
+- `src/services/items.rs`
+- `src/api/items.rs`
+- `migrations/000X_create_items.sql` (if `migrations/` directory exists)
+- Wires `ItemService` into `src/state.rs` and `items_router` into `src/api.rs`.
+
+#### 2. Generate a Sequenced Database Migration
+```sh
+# Creates deterministic sequenced SQLx migration:
+hephos generate migration add_orders_index
+```
+Creates:
+- `migrations/000X_add_orders_index.sql`
+
+---
+
 ## 4. The Anti-Pattern Codex (What Fails CI)
 
 | Anti-Pattern | Why It Is Forbidden | Correct Replacement |

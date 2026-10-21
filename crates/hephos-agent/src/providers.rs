@@ -14,6 +14,14 @@ use crate::message::{Message, Role, TextStream};
 use crate::model::{Completion, Model};
 use crate::tool::ToolCall;
 
+fn default_http_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new())
+}
+
 /// Anthropic Messages API client.
 #[derive(Debug)]
 pub struct Anthropic {
@@ -37,13 +45,19 @@ impl Anthropic {
             api_key: api_key.into(),
             model: model.into(),
             base_url: "https://api.anthropic.com".into(),
-            http: reqwest::Client::new(),
+            http: default_http_client(),
         }
     }
 
     /// Override the base URL (e.g. for testing against a mock server or proxy).
     pub fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
         self.base_url = base_url.into();
+        self
+    }
+
+    /// Override the underlying HTTP client (e.g. for enterprise proxies or custom timeouts).
+    pub fn with_client(mut self, client: reqwest::Client) -> Self {
+        self.http = client;
         self
     }
 }
@@ -145,13 +159,19 @@ impl OpenAI {
             api_key: api_key.into(),
             model: model.into(),
             base_url: "https://api.openai.com/v1".into(),
-            http: reqwest::Client::new(),
+            http: default_http_client(),
         }
     }
 
     /// Override the base URL (e.g. for testing or local LLM gateways).
     pub fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
         self.base_url = base_url.into();
+        self
+    }
+
+    /// Override the underlying HTTP client (e.g. for enterprise proxies or custom timeouts).
+    pub fn with_client(mut self, client: reqwest::Client) -> Self {
+        self.http = client;
         self
     }
 }

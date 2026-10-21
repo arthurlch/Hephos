@@ -25,6 +25,15 @@ pub enum Role {
 }
 
 impl Message {
+    pub fn system(content: impl Into<String>) -> Self {
+        Message {
+            role: Role::System,
+            content: content.into(),
+            tool_calls: Vec::new(),
+            tool_call_id: None,
+        }
+    }
+
     pub fn user(content: impl Into<String>) -> Self {
         Message {
             role: Role::User,
@@ -59,6 +68,23 @@ impl Message {
             tool_calls: Vec::new(),
             tool_call_id: Some(call_id.into()),
         }
+    }
+}
+
+impl std::fmt::Display for Role {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Role::System => write!(f, "system"),
+            Role::User => write!(f, "user"),
+            Role::Assistant => write!(f, "assistant"),
+            Role::Tool => write!(f, "tool"),
+        }
+    }
+}
+
+impl std::fmt::Display for Message {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[{}]: {}", self.role, self.content)
     }
 }
 
@@ -102,5 +128,12 @@ mod tests {
         assert_eq!(tool_msg.role, Role::Tool);
         assert_eq!(tool_msg.tool_call_id.as_deref(), Some("call_1"));
         assert_eq!(tool_msg.content, "2");
+
+        let sys_msg = Message::system("instruction");
+        assert_eq!(sys_msg.role, Role::System);
+        assert_eq!(sys_msg.content, "instruction");
+
+        assert_eq!(format!("{}", Role::System), "system");
+        assert_eq!(format!("{}", user), "[user]: hello");
     }
 }

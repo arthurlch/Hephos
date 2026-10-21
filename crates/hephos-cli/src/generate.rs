@@ -284,7 +284,80 @@ pub async fn create_one(ctx: Ctx, Json(input): Json<Create{type_name}>) -> Resul
         }
     }
 
+    // 5. If migrations/ directory exists, create resource migration if absent
+    let migrations_dir = project_root.join("migrations");
+    if migrations_dir.exists() {
+        let migration_pattern = format!("create_{plural}");
+        let already_migrated = fs::read_dir(&migrations_dir)
+            .ok()
+            .map(|entries| {
+                entries
+                    .flatten()
+                    .any(|e| e.file_name().to_string_lossy().contains(&migration_pattern))
+            })
+            .unwrap_or(false);
+
+        if !already_migrated {
+            let mig_file = generate_migration(project_root, &format!("create_{plural}"))?;
+            created_files.push(mig_file);
+        }
+    }
+
     Ok(created_files)
+}
+
+/// Generate a canonical SQL migration file in the migrations/ directory.
+pub fn generate_migration(project_root: &Path, name: &str) -> Result<String> {
+    let clean_name = name.trim().to_lowercase().replace([' ', '-'], "_");
+    if clean_name.is_empty() {
+        bail!("migration name cannot be empty");
+    }
+
+    let migrations_dir = project_root.join("migrations");
+    fs::create_dir_all(&migrations_dir)?;
+
+    let mut max_seq = 0u64;
+    if let Ok(entries) = fs::read_dir(&migrations_dir) {
+        for entry in entries.flatten() {
+            let fname = entry.file_name().to_string_lossy().to_string();
+            if fname.ends_with(".sql") {
+                if let Some((prefix, _)) = fname.split_once('_') {
+                    if let Ok(seq) = prefix.parse::<u64>() {
+                        if seq > max_seq {
+                            max_seq = seq;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let next_seq = max_seq + 1;
+    let filename = format!("{:04}_{clean_name}.sql", next_seq);
+    let target_path = migrations_dir.join(&filename);
+
+    if target_path.exists() {
+        bail!("migration file '{}' already exists", filename);
+    }
+
+    let table_name = clean_name
+        .trim_start_matches("create_")
+        .trim_end_matches("_table");
+
+    let content = format!(
+        r#"-- Migration: {filename}
+-- Canonical Hephos SQLx migration
+
+CREATE TABLE IF NOT EXISTS {table_name} (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+"#
+    );
+
+    fs::write(&target_path, content)?;
+    Ok(format!("migrations/{filename}"))
 }
 
 fn wire_api_routes(content: &str, plural: &str) -> String {
@@ -510,5 +583,28 @@ mod tests {
         let state_content = fs::read_to_string(src2.join("state.rs")).unwrap();
         assert!(state_content.contains("pub orders: OrderService,"));
         assert!(state_content.contains("OrderService::new(db.clone())"));
+    }
+
+    #[test]
+    fn test_generate_migration_creates_sequenced_files() {
+        let temp = TempDir::new();
+        let m1 = generate_migration(temp.path(), "create_users").unwrap();
+        assert_eq!(m1, "migrations/0001_create_users.sql");
+        assert!(
+            temp.path()
+                .join("migrations/0001_create_users.sql")
+                .exists()
+        );
+
+        let m2 = generate_migration(temp.path(), "add_orders_table").unwrap();
+        assert_eq!(m2, "migrations/0002_add_orders_table.sql");
+        assert!(
+            temp.path()
+                .join("migrations/0002_add_orders_table.sql")
+                .exists()
+        );
+
+        let content = fs::read_to_string(temp.path().join(&m1)).unwrap();
+        assert!(content.contains("CREATE TABLE IF NOT EXISTS users"));
     }
 }

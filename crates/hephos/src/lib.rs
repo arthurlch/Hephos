@@ -48,7 +48,7 @@ pub mod prelude {
         ApprovalDecision, ApprovalState, Db, Job, JobOptions, JobRegistry, JobState, JobWorker,
         Jobs, Outbox, OutboxDrain, OutboxEntry, OutboxState, Tx, WorkflowApprovalRecord,
         WorkflowCompensationRecord, WorkflowContext, WorkflowRecord, WorkflowState,
-        WorkflowStepRecord, Workflows, is_unique_violation, sqlx,
+        WorkflowStepRecord, Workflows, is_foreign_key_violation, is_unique_violation, sqlx,
     };
 
     #[cfg(feature = "agent")]

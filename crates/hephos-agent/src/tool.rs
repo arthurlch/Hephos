@@ -298,6 +298,11 @@ impl Tools {
         self.items.iter().find(|t| t.schema().name == name)
     }
 
+    /// Return true if a tool with the given name is registered.
+    pub fn contains(&self, name: &str) -> bool {
+        self.get(name).is_some()
+    }
+
     /// Dispatch a [`ToolCall`] to the matching registered tool.
     pub async fn dispatch(&self, call: ToolCall) -> Result<ToolResult> {
         let tool = self
@@ -403,6 +408,8 @@ mod tests {
 
         assert_eq!(tools.len(), 1);
         assert!(!tools.is_empty());
+        assert!(tools.contains("mock_tool"));
+        assert!(!tools.contains("unknown_tool"));
 
         let schemas = tools.schemas();
         assert_eq!(schemas.len(), 1);
