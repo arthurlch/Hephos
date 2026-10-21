@@ -23,7 +23,7 @@ CRITICAL DIRECTIVES:
 3. ONE ERROR TYPE: Every fallible function returns `hephos::Result<T>` (`Result<T, hephos::Error>`).
    - Use `Error::not_found("entity")`, `Error::invalid("reason")`, `Error::conflict("reason")`, `Error::unauthorized()`, `Error::forbidden()`, `Error::rate_limited("msg")`.
    - Never define custom error enums in application crates.
-4. UNIFORM CONTEXT: `ctx: Ctx` is ALWAYS the first argument of handlers, tools, and background tasks. Access state solely through `ctx.state()`. Never use global state or Arc<Mutex<AppState>>.
+4. UNIFORM CONTEXT: `ctx: Ctx` is ALWAYS the first argument of HTTP handlers, service methods (`&Ctx`), and background tasks. Access state solely through `ctx.state()`. In contrast, `Tool` implementations capture dependencies (`Db`, services, identity) in their struct fields at construction (`self`) and receive strongly-typed input via `(&self, input: Self::Input)` in `call`, keeping tools decoupled and portable to MCP servers.
 5. ROUTER CANARY & TESTS: Every app must pass `api::routes()` composition without panic. Every endpoint must have at least one success test and one failure test driven via `hephos::test::TestClient`.
 6. ZERO UNWRAP: Never `.unwrap()` or `.expect()` in application runtime code. Use `?` with `From` conversions.
 ```

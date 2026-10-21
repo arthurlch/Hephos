@@ -328,3 +328,38 @@ async fn dropping_stream_cancels_generation() {
         "expected stream generator to be dropped and cancelled"
     );
 }
+
+#[tokio::test]
+async fn tool_using_agent_streams_after_recovering_from_tool_error() {
+    struct FailOnceTool;
+    impl Tool for FailOnceTool {
+        type Input = serde_json::Value;
+        type Output = String;
+        const NAME: &'static str = "fail_tool";
+        const DESCRIPTION: &'static str = "fails with not_found";
+
+        async fn call(&self, _input: Self::Input) -> Result<String> {
+            Err(hephos_core::Error::not_found("item not found"))
+        }
+    }
+
+    let model = SequenceModel::new(vec![
+        Message::assistant_with_tools(
+            "trying tool",
+            vec![ToolCall::with_id(
+                "c_fail",
+                "fail_tool",
+                serde_json::json!({}),
+            )],
+        ),
+        Message::assistant("recovered stream output"),
+    ]);
+
+    let agent = Agent::new(model).tool(FailOnceTool);
+    let mut stream = agent.stream("start").await.unwrap();
+    let mut text = String::new();
+    while let Some(chunk) = stream.next().await {
+        text.push_str(&chunk.unwrap());
+    }
+    assert_eq!(text, "recovered stream output");
+}

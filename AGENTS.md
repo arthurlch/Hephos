@@ -360,7 +360,7 @@ guessing. If you cannot, the change is not done:
 
 **Preferred**
 - `hephos::Result<T>` everywhere
-- `ctx: Ctx` first parameter everywhere
+- `ctx: Ctx` first parameter everywhere in handlers, services, and tasks (tools capture state at construction)
 - `Json<T>` in, `Result<Json<T>>` out
 - compile-checked `sqlx::query_as!`
 - `?` with `From` conversions

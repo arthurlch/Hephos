@@ -228,19 +228,180 @@ pub async fn create_one(ctx: Ctx, Json(input): Json<Create{type_name}>) -> Resul
     if api_mod.exists() {
         let line = format!("pub mod {plural};");
         let content = fs::read_to_string(&api_mod)?;
-        if !content.contains(&line) {
-            let mut new_c = content;
-            if !new_c.ends_with('\n') {
-                new_c.push('\n');
-            }
-            new_c.push_str(&line);
-            new_c.push('\n');
-            fs::write(&api_mod, new_c)?;
+        let mut new_c = content;
+        if !new_c.contains(&line) {
+            new_c = format!("{line}\n{new_c}");
             created_files.push(format!("src/api.rs (declared pub mod {plural})"));
+        }
+        let merged_c = wire_api_routes(&new_c, &plural);
+        if merged_c != new_c {
+            new_c = merged_c;
+            created_files.push(format!("src/api.rs (merged {plural}::routes())"));
+        }
+        fs::write(&api_mod, new_c)?;
+    }
+
+    // Wire into state.rs if present
+    let state_file = src_dir.join("state.rs");
+    if state_file.exists() {
+        let content = fs::read_to_string(&state_file)?;
+        let (new_c, updated) = wire_state_service(&content, &plural, &type_name);
+        if updated {
+            fs::write(&state_file, new_c)?;
+            created_files.push(format!(
+                "src/state.rs (registered {type_name}Service into AppState)"
+            ));
+        }
+    }
+
+    // Wire features = ["db"] and sqlx/uuid into Cargo.toml if absent
+    let cargo_file = project_root.join("Cargo.toml");
+    if cargo_file.exists() {
+        let cargo_content = fs::read_to_string(&cargo_file)?;
+        if !cargo_content.contains("features = [\"db\"]")
+            && !cargo_content.contains("features=[\"db\"]")
+        {
+            let mut updated_cargo = cargo_content.clone();
+            if cargo_content.contains("hephos = { version = \"1.0.0\" }") {
+                updated_cargo = cargo_content.replace(
+                    "hephos = { version = \"1.0.0\" }",
+                    "hephos = { version = \"1.0.0\", features = [\"db\"] }\nsqlx = { version = \"0.8\", default-features = false, features = [\"runtime-tokio\", \"tls-rustls\", \"postgres\", \"macros\", \"uuid\", \"chrono\"] }\nuuid = { version = \"1\", features = [\"v4\", \"serde\"] }",
+                );
+            } else if let Some(idx) = cargo_content.find("hephos = { path = \"") {
+                if let Some(brace) = cargo_content[idx..].find('}') {
+                    let end = idx + brace;
+                    let before_brace = &cargo_content[..end];
+                    let after_brace = &cargo_content[end..];
+                    updated_cargo = format!(
+                        "{before_brace}, features = [\"db\"]{after_brace}\nsqlx = {{ version = \"0.8\", default-features = false, features = [\"runtime-tokio\", \"tls-rustls\", \"postgres\", \"macros\", \"uuid\", \"chrono\"] }}\nuuid = {{ version = \"1\", features = [\"v4\", \"serde\"] }}\n"
+                    );
+                }
+            }
+            if updated_cargo != cargo_content {
+                fs::write(&cargo_file, updated_cargo)?;
+                created_files.push("Cargo.toml (enabled features = [\"db\"])".to_string());
+            }
         }
     }
 
     Ok(created_files)
+}
+
+fn wire_api_routes(content: &str, plural: &str) -> String {
+    let merge_call = format!(".merge({plural}::routes())");
+    if content.contains(&merge_call) {
+        return content.to_string();
+    }
+
+    if let Some(fn_idx) = content.find("fn routes") {
+        let after_fn = &content[fn_idx..];
+        if let Some(router_pos) = after_fn.find("Router::new()") {
+            let router_abs = fn_idx + router_pos;
+            let rest = &content[router_abs..];
+            if let Some(semi_pos) = rest.find(';') {
+                let insert_pos = router_abs + semi_pos;
+                let mut res = String::new();
+                res.push_str(&content[..insert_pos]);
+                res.push('\n');
+                res.push_str(&format!("        {merge_call}"));
+                res.push_str(&content[insert_pos..]);
+                return res;
+            } else if let Some(brace_pos) = rest.find('}') {
+                let insert_pos = router_abs + brace_pos;
+                let trimmed_before = content[..insert_pos].trim_end();
+                let mut res = String::new();
+                res.push_str(trimmed_before);
+                res.push('\n');
+                res.push_str(&format!("        {merge_call}\n"));
+                res.push_str(&content[insert_pos..]);
+                return res;
+            }
+        }
+    }
+    content.to_string()
+}
+
+fn wire_state_service(content: &str, plural: &str, type_name: &str) -> (String, bool) {
+    let field_decl = format!("pub {plural}: {type_name}Service,");
+    if content.contains(&field_decl) || content.contains(&format!("pub {plural}:")) {
+        return (content.to_string(), false);
+    }
+
+    let mut result = content.to_string();
+    let import_line = format!("use crate::services::{plural}::{type_name}Service;\n");
+    if !result.contains(&import_line) && !result.contains(&format!("{type_name}Service")) {
+        result = format!("{import_line}{result}");
+    }
+
+    let has_db = result.contains("pub db: Db") || result.contains("db: Db");
+
+    // 1. If AppState doesn't have db, add pub db: Db
+    if !has_db {
+        if let Some(struct_idx) = result.find("pub struct AppState {") {
+            let after_struct = &result[struct_idx..];
+            if let Some(close_brace) = after_struct.find('}') {
+                let insert_pos = struct_idx + close_brace;
+                let mut updated = String::new();
+                updated.push_str(&result[..insert_pos]);
+                updated.push_str("    pub db: Db,\n");
+                updated.push_str(&result[insert_pos..]);
+                result = updated;
+            }
+        }
+    }
+
+    // 2. Add field to AppState struct
+    if let Some(struct_idx) = result.find("pub struct AppState {") {
+        let after_struct = &result[struct_idx..];
+        if let Some(close_brace) = after_struct.find('}') {
+            let insert_pos = struct_idx + close_brace;
+            let mut updated = String::new();
+            updated.push_str(&result[..insert_pos]);
+            updated.push_str(&format!("    {field_decl}\n"));
+            updated.push_str(&result[insert_pos..]);
+            result = updated;
+        }
+    }
+
+    // 3. Initialize db in AppState::init() if not present
+    if !has_db {
+        if let Some(fn_init) = result.find("pub async fn init()") {
+            let after_init = &result[fn_init..];
+            if let Some(body_start) = after_init.find('{') {
+                let insert_pos = fn_init + body_start + 1;
+                let db_init = r#"
+        let db_url = std::env::var("DATABASE_URL")
+            .unwrap_or_else(|_| "postgres://localhost/postgres".to_string());
+        let db = Db::connect_lazy(&db_url)?;
+"#;
+                let mut updated = String::new();
+                updated.push_str(&result[..insert_pos]);
+                updated.push_str(db_init);
+                updated.push_str(&result[insert_pos..]);
+                result = updated;
+            }
+        }
+    }
+
+    // 4. Instantiate service in Ok(Self { ... })
+    if let Some(init_idx) = result.find("Ok(Self {") {
+        let after_init = &result[init_idx..];
+        if let Some(close_brace) = after_init.find('}') {
+            let insert_pos = init_idx + close_brace;
+            let mut updated = String::new();
+            updated.push_str(&result[..insert_pos]);
+            if !has_db {
+                updated.push_str("            db,\n");
+            }
+            updated.push_str(&format!(
+                "            {plural}: {type_name}Service::new(db.clone()),\n"
+            ));
+            updated.push_str(&result[insert_pos..]);
+            result = updated;
+        }
+    }
+
+    (result, true)
 }
 
 fn to_pascal_case(s: &str) -> String {
@@ -312,9 +473,18 @@ mod tests {
         .unwrap();
         fs::write(src2.join("domain.rs"), "pub mod other;\n").unwrap();
         fs::write(src2.join("services.rs"), "pub mod other;\n").unwrap();
-        fs::write(src2.join("api.rs"), "pub mod other;\n").unwrap();
+        fs::write(
+            src2.join("api.rs"),
+            "pub mod other;\nuse hephos::prelude::*;\nuse crate::state::AppState;\npub fn routes() -> Router<AppState> {\n    Router::new()\n}\n",
+        )
+        .unwrap();
+        fs::write(
+            src2.join("state.rs"),
+            "use hephos::prelude::*;\npub type Ctx = hephos::Ctx<AppState>;\n#[derive(Clone)]\npub struct AppState {\n    pub db: Db,\n}\nimpl AppState {\n    pub async fn init() -> Result<Self> {\n        let db_url = \"postgres://localhost/postgres\";\n        let db = Db::connect_lazy(db_url)?;\n        Ok(Self {\n            db,\n        })\n    }\n}\n",
+        )
+        .unwrap();
 
-        let generated2 = generate_resource(temp2.path(), "order").unwrap();
+        let _generated2 = generate_resource(temp2.path(), "order").unwrap();
         assert!(src2.join("domain/order.rs").exists());
         assert!(src2.join("repos/orders.rs").exists());
         assert!(src2.join("repos.rs").exists());
@@ -333,11 +503,12 @@ mod tests {
                 .unwrap()
                 .contains("pub mod orders;")
         );
-        assert!(
-            fs::read_to_string(src2.join("api.rs"))
-                .unwrap()
-                .contains("pub mod orders;")
-        );
-        assert_eq!(generated2.len(), 9); // 4 resource files + repos.rs + 4 wiring updates
+        let api_content = fs::read_to_string(src2.join("api.rs")).unwrap();
+        assert!(api_content.contains("pub mod orders;"));
+        assert!(api_content.contains(".merge(orders::routes())"));
+
+        let state_content = fs::read_to_string(src2.join("state.rs")).unwrap();
+        assert!(state_content.contains("pub orders: OrderService,"));
+        assert!(state_content.contains("OrderService::new(db.clone())"));
     }
 }

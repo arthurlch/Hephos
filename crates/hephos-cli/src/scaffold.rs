@@ -43,7 +43,12 @@ pub fn validate_package_name(name: &str) -> Result<()> {
 }
 
 /// Scaffolds a complete Hephos application conforming to the AGENTS.md layout.
-pub fn scaffold_app(name: &str, target_dir: &Path, local_hephos_path: Option<&Path>) -> Result<()> {
+pub fn scaffold_app(
+    name: &str,
+    target_dir: &Path,
+    local_hephos_path: Option<&Path>,
+    with_db: bool,
+) -> Result<()> {
     validate_package_name(name)?;
 
     if target_dir.exists() {
@@ -79,9 +84,27 @@ pub fn scaffold_app(name: &str, target_dir: &Path, local_hephos_path: Option<&Pa
                     .unwrap_or_else(|_| path.to_path_buf())
             };
             let path_str = abs_path.display().to_string().replace('\\', "/");
-            format!("hephos = {{ path = \"{path_str}\" }}")
+            if with_db {
+                format!("hephos = {{ path = \"{path_str}\", features = [\"db\"] }}")
+            } else {
+                format!("hephos = {{ path = \"{path_str}\" }}")
+            }
         }
-        None => "hephos = { version = \"1.0.0\" }".to_string(),
+        None => {
+            if with_db {
+                "hephos = { version = \"1.0.0\", features = [\"db\"] }".to_string()
+            } else {
+                "hephos = { version = \"1.0.0\" }".to_string()
+            }
+        }
+    };
+
+    let extra_deps = if with_db {
+        r#"sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "macros", "uuid", "chrono"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+"#
+    } else {
+        ""
     };
 
     // 1. Cargo.toml
@@ -96,7 +119,7 @@ edition = "2024"
 tokio = {{ version = "1", features = ["rt-multi-thread", "macros"] }}
 serde = {{ version = "1", features = ["derive"] }}
 serde_json = "1"
-"#
+{extra_deps}"#
     );
     fs::write(target_dir.join("Cargo.toml"), cargo_toml)?;
 
@@ -125,7 +148,33 @@ async fn main() -> Result<()> {
     fs::write(src_dir.join("main.rs"), main_rs)?;
 
     // 4. src/state.rs
-    let state_rs = r#"use hephos::prelude::*;
+    let state_rs = if with_db {
+        r#"use hephos::prelude::*;
+
+use crate::services::hello::HelloService;
+
+pub type Ctx = hephos::Ctx<AppState>;
+
+#[derive(Clone)]
+pub struct AppState {
+    pub db: Db,
+    pub hello: HelloService,
+}
+
+impl AppState {
+    pub async fn init() -> Result<Self> {
+        let db_url = std::env::var("DATABASE_URL")
+            .unwrap_or_else(|_| "postgres://localhost/postgres".to_string());
+        let db = Db::connect_lazy(&db_url)?;
+        Ok(Self {
+            db,
+            hello: HelloService::new(),
+        })
+    }
+}
+"#
+    } else {
+        r#"use hephos::prelude::*;
 
 use crate::services::hello::HelloService;
 
@@ -143,7 +192,8 @@ impl AppState {
         })
     }
 }
-"#;
+"#
+    };
     fs::write(src_dir.join("state.rs"), state_rs)?;
 
     // 5. src/api.rs

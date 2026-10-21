@@ -149,6 +149,7 @@ where
             StatusCode::REQUEST_TIMEOUT,
             config.timeout,
         ))
+        .layer(middleware::from_fn(normalize_error_responses))
         .layer(middleware::from_fn(move |req, next| {
             crate::telemetry::red_metrics_middleware(metrics.clone(), req, next)
         }))
@@ -208,6 +209,57 @@ fn on_governor_error(error: GovernorError) -> Response {
                 }
             }
             response
+        }
+    }
+}
+
+/// Normalizes edge/middleware error responses (such as raw Tower timeout, body limit,
+/// and Axum 404/405 rejections) into the canonical Hephos JSON error envelope.
+async fn normalize_error_responses(req: Request, next: Next) -> Response {
+    let res = next.run(req).await;
+    let status = res.status();
+
+    // If the response is already JSON, keep it.
+    let is_json = res
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.starts_with("application/json"))
+        .unwrap_or(false);
+
+    if is_json || status.is_success() || status.is_redirection() {
+        return res;
+    }
+
+    match status {
+        StatusCode::REQUEST_TIMEOUT => {
+            let mut new_res = Error::Timeout.into_response();
+            copy_metadata_headers(res.headers(), new_res.headers_mut());
+            new_res
+        }
+        StatusCode::PAYLOAD_TOO_LARGE => {
+            let mut new_res = Error::PayloadTooLarge.into_response();
+            copy_metadata_headers(res.headers(), new_res.headers_mut());
+            new_res
+        }
+        StatusCode::METHOD_NOT_ALLOWED => {
+            let mut new_res = Error::MethodNotAllowed.into_response();
+            copy_metadata_headers(res.headers(), new_res.headers_mut());
+            new_res
+        }
+        StatusCode::NOT_FOUND => {
+            let mut new_res = Error::not_found("route").into_response();
+            copy_metadata_headers(res.headers(), new_res.headers_mut());
+            new_res
+        }
+        _ => res,
+    }
+}
+
+fn copy_metadata_headers(source: &axum::http::HeaderMap, target: &mut axum::http::HeaderMap) {
+    for (k, v) in source {
+        if k != header::CONTENT_TYPE && k != header::CONTENT_LENGTH {
+            target.insert(k.clone(), v.clone());
         }
     }
 }

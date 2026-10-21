@@ -62,7 +62,7 @@ fn test_scaffold_creates_canonical_files() {
     let temp = TempDir::new("scaffold");
     let app_dir = temp.path().join("demo_app");
 
-    scaffold_app("demo_app", &app_dir, None).expect("scaffold succeeds");
+    scaffold_app("demo_app", &app_dir, None, false).expect("scaffold succeeds");
 
     assert!(app_dir.join("Cargo.toml").exists());
     assert!(app_dir.join(".gitignore").exists());
@@ -77,10 +77,27 @@ fn test_scaffold_creates_canonical_files() {
     assert!(app_dir.join("src/tests.rs").exists());
 
     // Verify error on non-empty existing directory
-    let err = scaffold_app("demo_app", &app_dir, None);
+    let err = scaffold_app("demo_app", &app_dir, None, false);
     assert!(err.is_err());
     let err_msg = err.unwrap_err().to_string();
     assert!(err_msg.contains("already exists and is not empty"));
+}
+
+#[test]
+fn test_scaffold_with_db_creates_database_ready_state_and_deps() {
+    let temp = TempDir::new("scaffold_db");
+    let app_dir = temp.path().join("db_app");
+
+    scaffold_app("db_app", &app_dir, None, true).expect("scaffold with db succeeds");
+
+    let cargo_toml = fs::read_to_string(app_dir.join("Cargo.toml")).unwrap();
+    assert!(cargo_toml.contains("features = [\"db\"]"));
+    assert!(cargo_toml.contains("sqlx"));
+    assert!(cargo_toml.contains("uuid"));
+
+    let state_rs = fs::read_to_string(app_dir.join("src/state.rs")).unwrap();
+    assert!(state_rs.contains("pub db: Db"));
+    assert!(state_rs.contains("Db::connect_lazy"));
 }
 
 #[test]
@@ -98,7 +115,8 @@ fn test_scaffolded_app_builds_and_passes_tests() {
         .to_path_buf();
     let local_hephos = repo_root.join("crates").join("hephos");
 
-    scaffold_app("acceptance_app", &app_dir, Some(&local_hephos)).expect("scaffold succeeds");
+    scaffold_app("acceptance_app", &app_dir, Some(&local_hephos), false)
+        .expect("scaffold succeeds");
 
     // Run `cargo test` in the generated app directory
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
@@ -197,4 +215,59 @@ fn test_openapi_generation_from_real_example() {
     assert!(openapi["paths"]["/products/search"]["post"].is_object());
     assert!(openapi["paths"]["/health"]["get"].is_object());
     assert!(openapi["paths"]["/ready"]["get"].is_object());
+}
+
+#[test]
+fn test_end_to_end_scaffold_and_resource_generation() {
+    let temp = TempDir::new("fullstack");
+    let app_dir = temp.path().join("blog_app");
+
+    // 1. Scaffold database-ready application
+    scaffold_app("blog_app", &app_dir, None, true).expect("scaffold with db succeeds");
+
+    // 2. Generate a new resource "article"
+    let created = hephos_cli::generate_resource(&app_dir, "article").expect("generate resource");
+    assert!(!created.is_empty());
+
+    // 3. Verify files and wiring
+    assert!(app_dir.join("src/domain/article.rs").exists());
+    assert!(app_dir.join("src/repos/articles.rs").exists());
+    assert!(app_dir.join("src/services/articles.rs").exists());
+    assert!(app_dir.join("src/api/articles.rs").exists());
+
+    let state_rs = fs::read_to_string(app_dir.join("src/state.rs")).unwrap();
+    assert!(state_rs.contains("pub articles: ArticleService,"));
+    assert!(state_rs.contains("ArticleService::new(db.clone())"));
+
+    let api_rs = fs::read_to_string(app_dir.join("src/api.rs")).unwrap();
+    assert!(api_rs.contains("pub mod articles;"));
+    assert!(api_rs.contains(".merge(articles::routes())"));
+
+    // 4. Scan routes on the generated application
+    let routes = scan_routes(&app_dir).expect("scan routes on generated app");
+    assert!(
+        routes
+            .iter()
+            .any(|r| r.path == "/articles/{id}" && r.method == "GET")
+    );
+    assert!(
+        routes
+            .iter()
+            .any(|r| r.path == "/articles" && r.method == "POST")
+    );
+    assert!(
+        routes
+            .iter()
+            .any(|r| r.path == "/hello" && r.method == "GET")
+    );
+    assert!(
+        routes
+            .iter()
+            .any(|r| r.path == "/health" && r.method == "GET")
+    );
+
+    // 5. Generate OpenAPI for the generated application
+    let doc = hephos_cli::generate_openapi(&routes, "Blog API", "1.0.0");
+    assert!(doc["paths"]["/articles/{id}"]["get"].is_object());
+    assert!(doc["paths"]["/articles"]["post"].is_object());
 }

@@ -51,6 +51,10 @@ struct NewArgs {
     /// Path to a local hephos crate checkout (for offline development/tests).
     #[arg(long)]
     local_path: Option<PathBuf>,
+
+    /// Scaffold database-ready application with Db in AppState and sqlx/uuid dependencies.
+    #[arg(long)]
+    db: bool,
 }
 
 #[derive(Args, Debug)]
@@ -122,7 +126,7 @@ fn main() -> Result<()> {
                     }
                 }
             };
-            scaffold_app(&pkg_name, &target_dir, args.local_path.as_deref())?;
+            scaffold_app(&pkg_name, &target_dir, args.local_path.as_deref(), args.db)?;
             println!(
                 "Created Hephos application '{}' at {}",
                 pkg_name,
