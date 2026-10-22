@@ -29,9 +29,9 @@ All notable changes to Hephos are recorded here. Format follows
 ## [0.9.0] - 2026-10-20
 
 ### Added
-- **Performance Benchmarks & Overhead Analysis (`benches/overhead.rs`, `PERFORMANCE.md`)**:
+- **Performance Benchmarks & Overhead Analysis (`benches/overhead.rs`, `docs/reference/PERFORMANCE.md`)**:
   - Criterion microbenchmark suite measuring raw Axum vs Hephos standard Tower stack (request ID, tracing, timeout, body limit, catch panic, and RED metrics).
-  - Measured negligible overhead (~4.8 µs per request, <0.1% of real-world network latency) and demonstrated peak single-core throughput exceeding 175,000 req/sec.
+  - Measured negligible CPU overhead (~4.8 µs per request, <0.1% of a real-world network round-trip); the implied single-core CPU ceiling is ~10⁵ req/s in a no-network microbenchmark, not a sustained end-to-end throughput figure.
   - Added `make bench` target in `Makefile`.
 - **Canonical Reference Application (`examples/reference-app`)**:
   - Full-featured production reference application combining REST, Postgres SQL repositories, Argon2/JWT authentication, background retention reapers, in-process domain events, durable checkpointed workflows, and agents with tools and MCP.

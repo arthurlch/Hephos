@@ -439,8 +439,8 @@ appears in any log in an integration test (`SECURITY.md`, `tests/security.rs`, `
 **Theme.** Fast, horizontally scalable, and ready to commit to the API.
 
 **Shipped.**
-- ✅ Benchmarks (`criterion` micro-benchmarks in `crates/hephos-core/benches/overhead.rs` and `make bench`) measuring raw Axum vs Hephos standard Tower stack; published latency, throughput, and p99 targets in `PERFORMANCE.md`.
-- ✅ **Overhead vs. raw Axum**, measured and published: Hephos full Tower middleware lifecycle adds ~4.8 µs of overhead (<0.1% of typical 10ms network RTT) with peak throughput exceeding 175,000 req/sec per core.
+- ✅ Benchmarks (`criterion` micro-benchmarks in `crates/hephos-core/benches/overhead.rs` and `make bench`) measuring raw Axum vs Hephos standard Tower stack; published CPU-overhead measurements and latency design budgets in `docs/reference/PERFORMANCE.md`.
+- ✅ **Overhead vs. raw Axum**, measured and published: Hephos full Tower middleware lifecycle adds ~4.8 µs of CPU per request (<0.1% of a typical 10ms network RTT). That implies a single-core CPU ceiling on the order of 10⁵ req/s in a no-network microbenchmark — not a sustained end-to-end throughput figure.
 - ✅ A **reference application** (`examples/reference-app`) combining REST + DB + auth + durable background tasks/events + durable workflows + agent with tools + MCP server — following strict AGENTS.md §1-4 architecture, fully passing offline router tests (`TestClient`).
 - ✅ Validated the **everything-on-Postgres** architecture under scale; published operational playbook and offload thresholds in `docs/scaling.md`.
 - ✅ Multi-instance readiness: distroless Docker image (`Dockerfile`), Kubernetes manifests (`deploy/k8s/` with rolling updates, HPA, PDB, health probes), and `deploy/docker-compose.yml` with load balancing.

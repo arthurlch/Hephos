@@ -18,15 +18,26 @@ The entire production-grade safety harness — spanning UUID request ID generati
 
 ---
 
-## 2. Published Throughput and Latency Targets
+## 2. CPU Ceiling and Latency Design Budgets
 
-| Target Metric | Benchmark Budget | Realized Capability |
+The first row below is **measured** (CPU time in the microbenchmark above). The
+throughput figure is the *inverse* of that CPU cost on a single core with **no network
+and no database in the loop** — i.e. a CPU ceiling, **not** a sustained end-to-end
+throughput measurement. Real throughput is dominated by network and database latency
+and must be load-tested per deployment. The latency rows are **design budgets** backed
+by a mechanism, not measured production percentiles.
+
+| Metric | Budget | Status |
 | --- | --- | --- |
-| **Single-Core Peak Throughput** | ≥ 100,000 req/sec | **~175,000 req/sec** |
-| **In-Memory Request Processing Overhead** | < 10 µs | **~5.7 µs** |
-| **p50 Latency (REST CRUD + Postgres)** | < 3 ms | Achieved via pooled connections |
-| **p95 Latency (REST CRUD + Postgres)** | < 10 ms | Enforced via statement timeouts |
-| **p99 Latency (REST CRUD + Postgres)** | < 25 ms | Bounded via concurrency limits and load shedding |
+| **In-Memory Request Processing Overhead** | < 10 µs | **measured ~5.7 µs** |
+| **Single-Core CPU Ceiling** (1 / per-request CPU, no network/DB) | — | **~10⁵ req/s/core** (microbench ceiling, not sustained throughput) |
+| **p50 Latency (REST CRUD + Postgres)** | < 3 ms | design budget — mechanism: pooled connections |
+| **p95 Latency (REST CRUD + Postgres)** | < 10 ms | design budget — mechanism: statement timeouts |
+| **p99 Latency (REST CRUD + Postgres)** | < 25 ms | design budget — mechanism: concurrency limits + load shedding |
+
+> These latency budgets are targets the design is built to meet, not measured
+> percentiles from a production workload. Validate them with a load test against your
+> own deployment before quoting them.
 
 ---
 
