@@ -112,7 +112,7 @@ impl FileSecretProvider {
 
 impl SecretProvider for FileSecretProvider {
     fn get_secret(&self, key: &str) -> Result<Option<SecretString>> {
-        if key.contains("..") || key.contains('/') || key.contains('\\') {
+        if key.contains("..") || key.contains('/') || key.contains('\\') || key.contains('\0') {
             return Err(Error::invalid(format!("invalid secret key path: {key}")));
         }
         let path = self.base_dir.join(key);
@@ -227,6 +227,7 @@ mod tests {
 
         assert!(file_provider.get_secret("nonexistent").unwrap().is_none());
         assert!(file_provider.get_secret("../etc/passwd").is_err());
+        assert!(file_provider.get_secret("secret\0null").is_err());
 
         std::fs::remove_dir_all(&temp_dir).unwrap();
     }

@@ -3,12 +3,118 @@ use std::path::Path;
 
 use anyhow::{Result, bail};
 
+/// Rust language keywords and reserved identifiers that cannot be used as module or struct names.
+const RESERVED_NAMES: &[&str] = &[
+    "as", "async", "await", "break", "const", "continue", "crate", "dyn", "else", "enum", "extern",
+    "false", "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub",
+    "ref", "return", "self", "Self", "static", "struct", "super", "test", "trait", "true", "type",
+    "unsafe", "use", "where", "while",
+];
+
+/// Validates that a resource name is safe from path traversal and valid as a Rust identifier.
+pub fn validate_resource_name(name: &str) -> Result<()> {
+    if name.is_empty() {
+        bail!("resource name cannot be empty");
+    }
+
+    if name.contains('/') || name.contains('\\') || name.contains("..") || name.contains('\0') {
+        bail!("resource name cannot contain path separators, '..', or null bytes");
+    }
+
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        bail!("resource name cannot be empty");
+    };
+
+    if !first.is_ascii_lowercase() && first != '_' {
+        bail!(
+            "resource name must start with an ASCII lowercase letter or underscore, found '{first}'"
+        );
+    }
+
+    for c in chars {
+        if !c.is_ascii_alphanumeric() && c != '_' {
+            bail!(
+                "resource name can only contain ASCII alphanumeric characters and underscores, found invalid character '{c}'"
+            );
+        }
+    }
+
+    if RESERVED_NAMES.contains(&name) {
+        bail!("'{name}' is a reserved Rust keyword and cannot be used as a resource name");
+    }
+
+    let singular = name.trim_end_matches('s');
+    if singular.is_empty() {
+        bail!("resource name cannot consist only of 's'");
+    }
+
+    if RESERVED_NAMES.contains(&singular) {
+        bail!(
+            "singular form '{singular}' is a reserved Rust keyword and cannot be used as a resource name"
+        );
+    }
+
+    Ok(())
+}
+
+/// Validates that a migration name is safe from path traversal and SQL injection.
+pub fn validate_migration_name(name: &str) -> Result<String> {
+    if name.is_empty() {
+        bail!("migration name cannot be empty");
+    }
+
+    if name.contains('/') || name.contains('\\') || name.contains("..") || name.contains('\0') {
+        bail!("migration name cannot contain path separators, '..', or null bytes");
+    }
+
+    let clean_name = name.trim().to_lowercase().replace([' ', '-'], "_");
+    if clean_name.is_empty() {
+        bail!("migration name cannot be empty");
+    }
+
+    let mut chars = clean_name.chars();
+    let Some(first) = chars.next() else {
+        bail!("migration name cannot be empty");
+    };
+
+    if !first.is_ascii_alphanumeric() && first != '_' {
+        bail!(
+            "migration name must start with an ASCII letter, digit, or underscore, found '{first}'"
+        );
+    }
+
+    for c in chars {
+        if !c.is_ascii_alphanumeric() && c != '_' {
+            bail!(
+                "migration name can only contain ASCII alphanumeric characters and underscores, found invalid character '{c}'"
+            );
+        }
+    }
+
+    let table_name = clean_name
+        .trim_start_matches("create_")
+        .trim_end_matches("_table");
+
+    if table_name.is_empty() {
+        bail!("migration table name cannot be empty");
+    }
+
+    for c in table_name.chars() {
+        if !c.is_ascii_alphanumeric() && c != '_' {
+            bail!(
+                "derived table name '{table_name}' contains invalid SQL identifier character '{c}'"
+            );
+        }
+    }
+
+    Ok(clean_name)
+}
+
 /// Generate canonical domain, repo, service, and api scaffold files for a resource.
 pub fn generate_resource(project_root: &Path, resource: &str) -> Result<Vec<String>> {
     let raw_name = resource.trim().to_lowercase();
-    if raw_name.is_empty() {
-        bail!("resource name cannot be empty");
-    }
+    validate_resource_name(&raw_name)?;
 
     let src_dir = project_root.join("src");
     if !src_dir.exists() {
@@ -308,10 +414,7 @@ pub async fn create_one(ctx: Ctx, Json(input): Json<Create{type_name}>) -> Resul
 
 /// Generate a canonical SQL migration file in the migrations/ directory.
 pub fn generate_migration(project_root: &Path, name: &str) -> Result<String> {
-    let clean_name = name.trim().to_lowercase().replace([' ', '-'], "_");
-    if clean_name.is_empty() {
-        bail!("migration name cannot be empty");
-    }
+    let clean_name = validate_migration_name(name)?;
 
     let migrations_dir = project_root.join("migrations");
     fs::create_dir_all(&migrations_dir)?;
@@ -335,6 +438,9 @@ pub fn generate_migration(project_root: &Path, name: &str) -> Result<String> {
     let next_seq = max_seq + 1;
     let filename = format!("{:04}_{clean_name}.sql", next_seq);
     let target_path = migrations_dir.join(&filename);
+    if !target_path.starts_with(&migrations_dir) {
+        bail!("migration file path escapes migrations directory");
+    }
 
     if target_path.exists() {
         bail!("migration file '{}' already exists", filename);
@@ -606,5 +712,54 @@ mod tests {
 
         let content = fs::read_to_string(temp.path().join(&m1)).unwrap();
         assert!(content.contains("CREATE TABLE IF NOT EXISTS users"));
+    }
+
+    #[test]
+    fn test_generate_resource_security_validation() {
+        let temp = TempDir::new();
+        let src = temp.path().join("src");
+        fs::create_dir_all(&src).unwrap();
+
+        // 1. Path traversal attempts
+        assert!(generate_resource(temp.path(), "../evil").is_err());
+        assert!(generate_resource(temp.path(), "../../etc/passwd").is_err());
+        assert!(generate_resource(temp.path(), "foo/bar").is_err());
+        assert!(generate_resource(temp.path(), "foo\\bar").is_err());
+        assert!(generate_resource(temp.path(), "foo\0bar").is_err());
+
+        // 2. Reserved Rust keywords
+        assert!(generate_resource(temp.path(), "type").is_err());
+        assert!(generate_resource(temp.path(), "struct").is_err());
+        assert!(generate_resource(temp.path(), "match").is_err());
+        assert!(generate_resource(temp.path(), "fn").is_err());
+        assert!(generate_resource(temp.path(), "mod").is_err());
+        assert!(generate_resource(temp.path(), "const").is_err());
+
+        // 3. Invalid identifier syntax and code injection attempts
+        assert!(generate_resource(temp.path(), "item; rm -rf /").is_err());
+        assert!(generate_resource(temp.path(), "item-name").is_err());
+        assert!(generate_resource(temp.path(), "123product").is_err());
+        assert!(generate_resource(temp.path(), "").is_err());
+        assert!(generate_resource(temp.path(), "s").is_err());
+    }
+
+    #[test]
+    fn test_generate_migration_security_validation() {
+        let temp = TempDir::new();
+
+        // 1. Path traversal attempts
+        assert!(generate_migration(temp.path(), "../evil").is_err());
+        assert!(generate_migration(temp.path(), "sub/evil").is_err());
+        assert!(generate_migration(temp.path(), "sub\\evil").is_err());
+        assert!(generate_migration(temp.path(), "evil\0name").is_err());
+
+        // 2. SQL injection attempts
+        assert!(generate_migration(temp.path(), "create_users; DROP TABLE users; --").is_err());
+        assert!(generate_migration(temp.path(), "users' OR '1'='1").is_err());
+        assert!(generate_migration(temp.path(), "users/*comment*/").is_err());
+
+        // 3. Valid migration names succeed
+        assert!(generate_migration(temp.path(), "create_users").is_ok());
+        assert!(generate_migration(temp.path(), "add-indexes").is_ok());
     }
 }

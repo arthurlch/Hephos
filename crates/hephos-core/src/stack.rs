@@ -264,8 +264,9 @@ fn copy_metadata_headers(source: &axum::http::HeaderMap, target: &mut axum::http
     }
 }
 
-/// An opinionated, minimal CORS layer: the standard methods and `content-type` /
-/// `authorization` headers, for either any origin (`*`) or an explicit allow-list.
+/// An opinionated, minimal CORS layer: the standard methods and safe headers,
+/// for either any origin (`*`) or an explicit allow-list. Exposes `x-request-id` so client
+/// applications can correlate requests without leaking private response headers.
 /// Credentials are not allowed (bearer-token APIs don't need cookies), so `*` is safe.
 fn cors_layer(origins: &[String]) -> CorsLayer {
     let layer = CorsLayer::new()
@@ -276,7 +277,15 @@ fn cors_layer(origins: &[String]) -> CorsLayer {
             Method::PATCH,
             Method::DELETE,
         ])
-        .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]);
+        .allow_headers([
+            header::CONTENT_TYPE,
+            header::AUTHORIZATION,
+            header::HeaderName::from_static("last-event-id"),
+            header::HeaderName::from_static("x-request-id"),
+            header::HeaderName::from_static("traceparent"),
+            header::HeaderName::from_static("tracestate"),
+        ])
+        .expose_headers([header::HeaderName::from_static("x-request-id")]);
     if origins.iter().any(|o| o == "*") {
         layer.allow_origin(Any)
     } else {
@@ -410,6 +419,10 @@ mod tests {
             .uri("/x")
             .header("origin", "https://app.example")
             .header("access-control-request-method", "GET")
+            .header(
+                "access-control-request-headers",
+                "last-event-id, x-request-id",
+            )
             .body(Body::empty())
             .unwrap();
         let response = app(Some(vec!["https://app.example".into()]))
@@ -422,6 +435,33 @@ mod tests {
                 .get("access-control-allow-origin")
                 .unwrap(),
             "https://app.example"
+        );
+        let allow_headers = response
+            .headers()
+            .get("access-control-allow-headers")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(allow_headers.contains("last-event-id"));
+        assert!(allow_headers.contains("x-request-id"));
+
+        // GET request exposes x-request-id to frontend clients
+        let get_req = HttpRequest::builder()
+            .method("GET")
+            .uri("/x")
+            .header("origin", "https://app.example")
+            .body(Body::empty())
+            .unwrap();
+        let get_res = app(Some(vec!["https://app.example".into()]))
+            .oneshot(get_req)
+            .await
+            .unwrap();
+        assert_eq!(
+            get_res
+                .headers()
+                .get("access-control-expose-headers")
+                .unwrap(),
+            "x-request-id"
         );
     }
 
