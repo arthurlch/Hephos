@@ -195,6 +195,33 @@ impl<M: Model> Agent<M> {
     /// generation. For tool-using agents, runs the tool dispatch loop until no
     /// further tools are called, then streams the final turn.
     pub async fn stream(&self, input: &str) -> Result<TextStream> {
+        let stream_fut = self.drive_stream(input);
+        let timeout_fut = tokio::time::timeout(self.limits.timeout, stream_fut);
+
+        if let Some(cancel) = &self.cancel_token {
+            tokio::select! {
+                biased;
+                _ = cancel.cancelled() => Err(Error::internal("agent execution cancelled")),
+                res = timeout_fut => match res {
+                    Ok(result) => result,
+                    Err(_) => Err(Error::internal(format!(
+                        "agent exceeded its time limit of {:?}",
+                        self.limits.timeout
+                    ))),
+                }
+            }
+        } else {
+            match timeout_fut.await {
+                Ok(result) => result,
+                Err(_) => Err(Error::internal(format!(
+                    "agent exceeded its time limit of {:?}",
+                    self.limits.timeout
+                ))),
+            }
+        }
+    }
+
+    async fn drive_stream(&self, input: &str) -> Result<TextStream> {
         if self.tools.is_empty() {
             let completion = Completion {
                 system: self.system.clone(),
@@ -231,10 +258,8 @@ impl<M: Model> Agent<M> {
                             )));
                         }
                         messages.push(reply);
-                        for call in calls {
-                            let result = self.dispatch(call).instrument(turn_span.clone()).await?;
-                            messages.push(tool_result_message(&result)?);
-                        }
+                        let tool_messages = self.dispatch_all(calls, &turn_span).await?;
+                        messages.extend(tool_messages);
                     }
                     _ => {
                         let parts: Vec<Result<String>> = reply
@@ -324,10 +349,8 @@ impl<M: Model> Agent<M> {
                         )));
                     }
                     messages.push(reply);
-                    for call in calls {
-                        let result = self.dispatch(call).instrument(turn_span.clone()).await?;
-                        messages.push(tool_result_message(&result)?);
-                    }
+                    let tool_messages = self.dispatch_all(calls, &turn_span).await?;
+                    messages.extend(tool_messages);
                 }
                 _ => return Ok(reply),
             }
@@ -425,10 +448,8 @@ impl<M: Model> Agent<M> {
                         )));
                     }
                     messages.push(reply);
-                    for call in calls {
-                        let result = self.dispatch(call).instrument(turn_span.clone()).await?;
-                        messages.push(tool_result_message(&result)?);
-                    }
+                    let tool_messages = self.dispatch_all(calls, &turn_span).await?;
+                    messages.extend(tool_messages);
                     checkpoint.save_turn(turn, messages.clone()).await?;
                 }
                 _ => {
@@ -444,7 +465,49 @@ impl<M: Model> Agent<M> {
         )))
     }
 
-    async fn dispatch(&self, call: ToolCall) -> Result<ToolResult> {
+    /// Dispatches all tool calls concurrently.
+    ///
+    /// If an individual tool execution returns an error (validation error, resource not found,
+    /// domain conflict, etc.), the error is transformed into a structured tool result and returned
+    /// back to the model rather than aborting the agent loop. This allows the model to inspect
+    /// the failure, adjust its strategy, and self-correct.
+    async fn dispatch_all(
+        &self,
+        calls: Vec<ToolCall>,
+        turn_span: &tracing::Span,
+    ) -> Result<Vec<Message>> {
+        let futures = calls.into_iter().map(|call| {
+            let span = tracing::info_span!(parent: turn_span, "agent.tool", tool = %call.name);
+            let name = call.name.clone();
+            let call_id = call.id.clone();
+            async move {
+                let result = match self.tools.dispatch(call).instrument(span).await {
+                    Ok(res) => res,
+                    Err(err) => ToolResult::with_call_id(
+                        call_id,
+                        name,
+                        serde_json::json!({
+                            "error": {
+                                "kind": err.kind(),
+                                "message": err.to_string(),
+                            }
+                        }),
+                    ),
+                };
+                tool_result_message(&result)
+            }
+        });
+
+        let results = futures::future::join_all(futures).await;
+        let mut messages = Vec::with_capacity(results.len());
+        for res in results {
+            messages.push(res?);
+        }
+        Ok(messages)
+    }
+
+    /// Dispatch a single tool call directly.
+    pub async fn dispatch(&self, call: ToolCall) -> Result<ToolResult> {
         let span = tracing::info_span!("agent.tool", tool = %call.name);
         self.tools.dispatch(call).instrument(span).await
     }
@@ -721,5 +784,161 @@ mod tests {
         assert_eq!(res2, "increment completed successfully");
         // Tool counter is still 1!
         assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    struct SleepTool {
+        delay: Duration,
+    }
+
+    impl Tool for SleepTool {
+        type Input = usize;
+        type Output = usize;
+
+        const NAME: &'static str = "sleep_tool";
+        const DESCRIPTION: &'static str = "sleeps for a duration";
+
+        async fn call(&self, input: Self::Input) -> Result<Self::Output> {
+            tokio::time::sleep(self.delay).await;
+            Ok(input * 2)
+        }
+    }
+
+    struct ParallelModel;
+
+    impl Model for ParallelModel {
+        async fn complete(&self, request: Completion) -> Result<Message> {
+            let tool_results: Vec<_> = request
+                .messages
+                .iter()
+                .filter(|m| m.role == crate::message::Role::Tool)
+                .collect();
+
+            if tool_results.is_empty() {
+                let mut msg = Message::assistant("calling two sleep tools");
+                msg.tool_calls
+                    .push(ToolCall::with_id("c1", "sleep_tool", serde_json::json!(10)));
+                msg.tool_calls
+                    .push(ToolCall::with_id("c2", "sleep_tool", serde_json::json!(20)));
+                Ok(msg)
+            } else {
+                assert_eq!(tool_results.len(), 2);
+                Ok(Message::assistant("parallel execution completed"))
+            }
+        }
+
+        async fn stream(&self, _request: Completion) -> Result<TextStream> {
+            Ok(Box::pin(futures::stream::empty()))
+        }
+    }
+
+    #[tokio::test]
+    async fn agent_parallel_tool_dispatch_runs_concurrently() {
+        // Each tool call sleeps for 60ms. Running 2 serially would take >= 120ms.
+        // Running concurrently with join_all completes in ~60-90ms.
+        let tool = SleepTool {
+            delay: Duration::from_millis(60),
+        };
+        let agent = Agent::new(ParallelModel).tool(tool);
+
+        let start = std::time::Instant::now();
+        let res = agent.run("run parallel").await.unwrap();
+        let elapsed = start.elapsed();
+
+        assert_eq!(res, "parallel execution completed");
+        assert!(
+            elapsed < Duration::from_millis(115),
+            "Expected parallel execution < 115ms, took {elapsed:?}"
+        );
+    }
+
+    struct LookupTool;
+
+    #[derive(serde::Deserialize, schemars::JsonSchema)]
+    struct LookupInput {
+        key: String,
+    }
+
+    impl Tool for LookupTool {
+        type Input = LookupInput;
+        type Output = String;
+
+        const NAME: &'static str = "lookup";
+        const DESCRIPTION: &'static str = "look up a resource by key";
+
+        async fn call(&self, input: Self::Input) -> Result<Self::Output> {
+            if input.key == "missing" {
+                Err(Error::not_found("resource missing"))
+            } else {
+                Ok(format!("found: {}", input.key))
+            }
+        }
+    }
+
+    struct RecoveryModel;
+
+    impl Model for RecoveryModel {
+        async fn complete(&self, request: Completion) -> Result<Message> {
+            let tool_results: Vec<_> = request
+                .messages
+                .iter()
+                .filter(|m| m.role == crate::message::Role::Tool)
+                .collect();
+
+            if tool_results.is_empty() {
+                // First turn: try looking up the missing resource
+                let mut msg = Message::assistant("trying initial lookup");
+                msg.tool_calls.push(ToolCall::with_id(
+                    "c_lookup_1",
+                    "lookup",
+                    serde_json::json!({ "key": "missing" }),
+                ));
+                Ok(msg)
+            } else if tool_results.len() == 1 {
+                // Second turn: verify we received the error feedback in JSON form!
+                let first_result = &tool_results[0];
+                let parsed: serde_json::Value =
+                    serde_json::from_str(&first_result.content).unwrap();
+                assert_eq!(parsed["error"]["kind"], "not_found");
+
+                // Self-correct: look up a fallback key that succeeds
+                let mut msg = Message::assistant("first lookup failed, trying fallback");
+                msg.tool_calls.push(ToolCall::with_id(
+                    "c_lookup_2",
+                    "lookup",
+                    serde_json::json!({ "key": "fallback" }),
+                ));
+                Ok(msg)
+            } else {
+                // Third turn: received success for fallback key
+                let second_result = &tool_results[1];
+                let parsed: serde_json::Value =
+                    serde_json::from_str(&second_result.content).unwrap();
+                assert_eq!(parsed, "found: fallback");
+                Ok(Message::assistant("recovered and found fallback"))
+            }
+        }
+
+        async fn stream(&self, _request: Completion) -> Result<TextStream> {
+            Ok(Box::pin(futures::stream::empty()))
+        }
+    }
+
+    #[tokio::test]
+    async fn agent_tool_error_feedback_enables_model_recovery() {
+        let agent = Agent::new(RecoveryModel).tool(LookupTool);
+        let res = agent.run("lookup something").await.unwrap();
+        assert_eq!(res, "recovered and found fallback");
+    }
+
+    #[tokio::test]
+    async fn stream_cancellation_honors_cancel_token() {
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        let agent = Agent::new(RecoveryModel).cancel_token(cancel);
+        let err = match agent.stream("hello").await {
+            Ok(_) => panic!("expected stream to fail when cancelled"),
+            Err(e) => e,
+        };
+        assert!(err.to_string().contains("cancelled"));
     }
 }

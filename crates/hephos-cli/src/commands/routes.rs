@@ -99,11 +99,12 @@ fn collect_rs_files(dir: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
 }
 
 /// Parses route registrations from Rust source code.
-/// Matches patterns like `.get("/path", handler)` across lines.
+/// Matches both shorthand patterns like `.get("/path", handler)` and Axum patterns like `.route("/path", get(h1).post(h2))`.
 pub fn parse_routes_from_str(source: &str, relative_source: &str) -> Vec<DiscoveredRoute> {
     let mut routes = Vec::new();
     let verbs = ["get", "post", "put", "patch", "delete"];
 
+    // 1. Shorthand pattern: .get("/path", handler), .post("/path", handler), etc.
     for verb in verbs {
         let pattern = format!(".{verb}(");
         let mut search_from = 0;
@@ -112,7 +113,6 @@ pub fn parse_routes_from_str(source: &str, relative_source: &str) -> Vec<Discove
             let abs_pos = search_from + pos + pattern.len();
             search_from = abs_pos;
 
-            // Find closing paren of the call
             let remainder = &source[abs_pos..];
             if let Some((path, handler)) = extract_path_and_handler(remainder) {
                 routes.push(DiscoveredRoute {
@@ -124,6 +124,57 @@ pub fn parse_routes_from_str(source: &str, relative_source: &str) -> Vec<Discove
             }
         }
     }
+
+    // 2. Axum standard pattern: .route("/path", get(h1).post(h2))
+    let route_pattern = ".route(";
+    let mut search_from = 0;
+    while let Some(pos) = source[search_from..].find(route_pattern) {
+        let abs_pos = search_from + pos + route_pattern.len();
+        search_from = abs_pos;
+
+        let remainder = &source[abs_pos..];
+        if let Some(first_quote) = remainder.find('"') {
+            let after_quote = &remainder[first_quote + 1..];
+            if let Some(second_quote) = after_quote.find('"') {
+                let path = after_quote[..second_quote].to_string();
+                let after_path = &after_quote[second_quote + 1..];
+                if let Some(comma_pos) = after_path.find(',') {
+                    let after_comma = &after_path[comma_pos + 1..];
+                    let block_end = after_comma.find(';').unwrap_or_else(|| {
+                        after_comma.find(".route(").unwrap_or(after_comma.len())
+                    });
+                    let route_body = &after_comma[..block_end];
+
+                    for verb in verbs {
+                        let v_patterns = [format!("{verb}("), format!(".{verb}(")];
+                        for vp in v_patterns {
+                            let mut v_search = 0;
+                            while let Some(v_pos) = route_body[v_search..].find(&vp) {
+                                let h_start = v_search + v_pos + vp.len();
+                                v_search = h_start;
+                                let h_rem = &route_body[h_start..];
+                                if let Some(h_end) = h_rem.find(')') {
+                                    let handler = h_rem[..h_end].trim().to_string();
+                                    if !handler.is_empty() {
+                                        routes.push(DiscoveredRoute {
+                                            method: verb.to_ascii_uppercase(),
+                                            path: path.clone(),
+                                            handler,
+                                            source_file: relative_source.to_string(),
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Deduplicate identical (method, path) entries
+    routes.sort_by(|a, b| a.path.cmp(&b.path).then_with(|| a.method.cmp(&b.method)));
+    routes.dedup_by(|a, b| a.method == b.method && a.path == b.path);
 
     routes
 }
@@ -235,29 +286,62 @@ pub fn generate_openapi(
 
         if let serde_json::Value::Object(methods) = path_item {
             let method_key = route.method.to_lowercase();
-            if method_key == "any" {
-                for m in &["get", "post"] {
-                    methods.entry(*m).or_insert_with(|| {
-                        serde_json::json!({
-                            "summary": format!("{} {}", m.to_uppercase(), route.path),
-                            "responses": {
-                                "200": { "description": "OK" }
-                            }
-                        })
-                    });
-                }
-            } else {
-                methods.insert(
-                    method_key,
-                    serde_json::json!({
-                        "summary": format!("{} {}", route.method, route.path),
-                        "responses": {
-                            "200": { "description": "OK" },
-                            "default": { "description": "Error response" }
+
+            // Extract path parameters if any: e.g. /users/{id} -> parameter "id"
+            let mut parameters = Vec::new();
+            let mut start = 0;
+            while let Some(open) = route.path[start..].find('{') {
+                let open_abs = start + open + 1;
+                if let Some(close) = route.path[open_abs..].find('}') {
+                    let param_name = &route.path[open_abs..open_abs + close];
+                    parameters.push(serde_json::json!({
+                        "name": param_name,
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
                         }
-                    }),
-                );
+                    }));
+                    start = open_abs + close + 1;
+                } else {
+                    break;
+                }
             }
+
+            let mut op = serde_json::json!({
+                "summary": format!("{} {}", route.method, route.path),
+                "operationId": format!("{}_{}", method_key, route.handler),
+                "responses": {
+                    "200": { "description": "Successful response" },
+                    "default": {
+                        "description": "Error response conforming to Hephos canonical error envelope",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "error": {
+                                            "type": "object",
+                                            "properties": {
+                                                "kind": { "type": "string" },
+                                                "message": { "type": "string" }
+                                            },
+                                            "required": ["kind", "message"]
+                                        }
+                                    },
+                                    "required": ["error"]
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            if !parameters.is_empty() {
+                op["parameters"] = serde_json::Value::Array(parameters);
+            }
+
+            methods.insert(method_key, op);
         }
     }
 
@@ -298,5 +382,68 @@ mod tests {
         assert_eq!(doc["info"]["version"], "1.0.0");
         assert!(doc["paths"]["/users"]["get"].is_object());
         assert!(doc["paths"]["/users"]["post"].is_object());
+    }
+
+    #[test]
+    fn parse_routes_discovers_both_shorthand_and_axum_route_syntax() {
+        let source = r#"
+            pub fn routes() -> Router<AppState> {
+                Router::new()
+                    .route("/users", get(list_users).post(create_user))
+                    .route("/users/{id}", get(get_user).delete(delete_user))
+                    .get("/health", health_check)
+            }
+        "#;
+        let routes = parse_routes_from_str(source, "src/api.rs");
+
+        assert!(
+            routes
+                .iter()
+                .any(|r| r.path == "/users" && r.method == "GET" && r.handler == "list_users")
+        );
+        assert!(
+            routes
+                .iter()
+                .any(|r| r.path == "/users" && r.method == "POST" && r.handler == "create_user")
+        );
+        assert!(
+            routes
+                .iter()
+                .any(|r| r.path == "/users/{id}" && r.method == "GET" && r.handler == "get_user")
+        );
+        assert!(routes.iter().any(|r| r.path == "/users/{id}"
+            && r.method == "DELETE"
+            && r.handler == "delete_user"));
+        assert!(
+            routes
+                .iter()
+                .any(|r| r.path == "/health" && r.method == "GET" && r.handler == "health_check")
+        );
+    }
+
+    #[test]
+    fn openapi_includes_path_parameters_and_canonical_error_schema() {
+        let routes = vec![DiscoveredRoute {
+            method: "GET".to_string(),
+            path: "/users/{user_id}/orders/{order_id}".to_string(),
+            handler: "get_user_order".to_string(),
+            source_file: "src/api/users.rs".to_string(),
+        }];
+
+        let doc = generate_openapi(&routes, "Orders API", "1.0.0");
+        let op = &doc["paths"]["/users/{user_id}/orders/{order_id}"]["get"];
+        let params = op["parameters"].as_array().expect("parameters array");
+        assert_eq!(params.len(), 2);
+        assert_eq!(params[0]["name"], "user_id");
+        assert_eq!(params[0]["in"], "path");
+        assert_eq!(params[0]["required"], true);
+        assert_eq!(params[1]["name"], "order_id");
+
+        // Canonical error envelope schema on default response
+        let default_resp = &op["responses"]["default"];
+        assert!(
+            default_resp["content"]["application/json"]["schema"]["properties"]["error"]
+                .is_object()
+        );
     }
 }

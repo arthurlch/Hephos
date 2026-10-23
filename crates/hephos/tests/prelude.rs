@@ -20,4 +20,11 @@ async fn prelude_builds_a_working_app() {
         .await;
     assert_eq!(res.status(), 200);
     assert_eq!(res.json::<serde_json::Value>()["ok"], true);
+
+    // Verify prelude db helpers are exported and callable when db feature is active
+    #[cfg(feature = "db")]
+    {
+        assert!(!is_unique_violation(&sqlx::Error::RowNotFound));
+        assert!(!is_foreign_key_violation(&sqlx::Error::RowNotFound));
+    }
 }

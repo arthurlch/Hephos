@@ -37,6 +37,12 @@ pub enum Error {
     #[error("payload too large")]
     PayloadTooLarge,
 
+    #[error("request timeout")]
+    Timeout,
+
+    #[error("method not allowed")]
+    MethodNotAllowed,
+
     #[error("too many requests: {0}")]
     RateLimited(String),
 
@@ -94,6 +100,16 @@ impl Error {
         Error::PayloadTooLarge
     }
 
+    /// A `408`: the request timed out before finishing.
+    pub fn timeout() -> Self {
+        Error::Timeout
+    }
+
+    /// A `405`: the HTTP method is not allowed for this route.
+    pub fn method_not_allowed() -> Self {
+        Error::MethodNotAllowed
+    }
+
     /// A `429`: the client has exceeded its rate limit quota.
     pub fn rate_limited(msg: impl Into<String>) -> Self {
         Error::RateLimited(msg.into())
@@ -119,6 +135,8 @@ impl Error {
             Error::Forbidden => StatusCode::FORBIDDEN,
             Error::Conflict(_) => StatusCode::CONFLICT,
             Error::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
+            Error::Timeout => StatusCode::REQUEST_TIMEOUT,
+            Error::MethodNotAllowed => StatusCode::METHOD_NOT_ALLOWED,
             Error::RateLimited(_) => StatusCode::TOO_MANY_REQUESTS,
             Error::Unavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
             Error::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
@@ -134,6 +152,8 @@ impl Error {
             Error::Forbidden => "forbidden",
             Error::Conflict(_) => "conflict",
             Error::PayloadTooLarge => "payload_too_large",
+            Error::Timeout => "timeout",
+            Error::MethodNotAllowed => "method_not_allowed",
             Error::RateLimited(_) => "rate_limited",
             Error::Unavailable(_) => "unavailable",
             Error::Internal(_) => "internal",
@@ -168,6 +188,16 @@ impl Error {
     /// Returns `true` if this error is [`Error::PayloadTooLarge`].
     pub fn is_payload_too_large(&self) -> bool {
         matches!(self, Error::PayloadTooLarge)
+    }
+
+    /// Returns `true` if this error is [`Error::Timeout`].
+    pub fn is_timeout(&self) -> bool {
+        matches!(self, Error::Timeout)
+    }
+
+    /// Returns `true` if this error is [`Error::MethodNotAllowed`].
+    pub fn is_method_not_allowed(&self) -> bool {
+        matches!(self, Error::MethodNotAllowed)
     }
 
     /// Returns `true` if this error is [`Error::RateLimited`].
@@ -208,6 +238,8 @@ impl Error {
             Error::Forbidden => "forbidden".to_string(),
             Error::Conflict(msg) => msg.clone(),
             Error::PayloadTooLarge => "request body too large".to_string(),
+            Error::Timeout => "request timed out".to_string(),
+            Error::MethodNotAllowed => "method not allowed".to_string(),
             Error::RateLimited(msg) => msg.clone(),
             Error::Unavailable(msg) => msg.clone(),
             Error::Internal(cause) => {
@@ -248,6 +280,11 @@ mod tests {
             Error::PayloadTooLarge.status(),
             StatusCode::PAYLOAD_TOO_LARGE
         );
+        assert_eq!(Error::Timeout.status(), StatusCode::REQUEST_TIMEOUT);
+        assert_eq!(
+            Error::MethodNotAllowed.status(),
+            StatusCode::METHOD_NOT_ALLOWED
+        );
         assert_eq!(
             Error::rate_limited("quota").status(),
             StatusCode::TOO_MANY_REQUESTS
@@ -270,6 +307,8 @@ mod tests {
         assert_eq!(Error::Forbidden.kind(), "forbidden");
         assert_eq!(Error::conflict("c").kind(), "conflict");
         assert_eq!(Error::PayloadTooLarge.kind(), "payload_too_large");
+        assert_eq!(Error::Timeout.kind(), "timeout");
+        assert_eq!(Error::MethodNotAllowed.kind(), "method_not_allowed");
         assert_eq!(Error::rate_limited("q").kind(), "rate_limited");
         assert_eq!(Error::unavailable("d").kind(), "unavailable");
         assert_eq!(Error::internal("x").kind(), "internal");
@@ -353,6 +392,18 @@ mod tests {
                 "request body too large",
             ),
             (
+                Error::Timeout,
+                StatusCode::REQUEST_TIMEOUT,
+                "timeout",
+                "request timed out",
+            ),
+            (
+                Error::MethodNotAllowed,
+                StatusCode::METHOD_NOT_ALLOWED,
+                "method_not_allowed",
+                "method not allowed",
+            ),
+            (
                 Error::rate_limited("wait 5s"),
                 StatusCode::TOO_MANY_REQUESTS,
                 "rate_limited",
@@ -393,6 +444,8 @@ mod tests {
         assert_eq!(format!("{}", Error::Forbidden), "forbidden");
         assert_eq!(format!("{}", Error::conflict("dup")), "conflict: dup");
         assert_eq!(format!("{}", Error::PayloadTooLarge), "payload too large");
+        assert_eq!(format!("{}", Error::Timeout), "request timeout");
+        assert_eq!(format!("{}", Error::MethodNotAllowed), "method not allowed");
         assert_eq!(
             format!("{}", Error::rate_limited("slow down")),
             "too many requests: slow down"

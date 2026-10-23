@@ -110,6 +110,12 @@ impl<S: Clone + Send + Sync + 'static> Ctx<S> {
         }
     }
 
+    /// Construct a detached context pre-authenticated as a user with roles.
+    /// Ideal for unit testing authenticated services and background tasks.
+    pub fn detached_user(state: S, id: Uuid, roles: Vec<String>) -> Self {
+        Self::detached(state).with_identity(Identity::user(id, roles))
+    }
+
     /// Return a copy of this context carrying a specific identity. Used by the
     /// agent/tool layer to run work on behalf of an authenticated caller.
     pub fn with_identity(&self, identity: Identity) -> Self {
@@ -295,5 +301,17 @@ mod tests {
         assert_eq!(ctx.state(), "app-state");
         assert!(ctx.require_role("admin").is_ok());
         assert!(!ctx.cancel_token().is_cancelled());
+    }
+
+    #[test]
+    fn detached_user_creates_authenticated_context() {
+        let user_id = Uuid::new_v4();
+        let ctx = Ctx::detached_user((), user_id, vec!["admin".into(), "billing".into()]);
+        assert_eq!(ctx.require_user().unwrap().id, user_id);
+        assert!(ctx.require_role("admin").is_ok());
+        assert!(ctx.require_role("billing").is_ok());
+        assert!(ctx.require_role("unknown").is_err());
+        assert!(ctx.require_owner(user_id).is_ok());
+        assert!(ctx.require_owner(Uuid::new_v4()).is_err());
     }
 }

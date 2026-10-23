@@ -149,6 +149,7 @@ where
             StatusCode::REQUEST_TIMEOUT,
             config.timeout,
         ))
+        .layer(middleware::from_fn(normalize_error_responses))
         .layer(middleware::from_fn(move |req, next| {
             crate::telemetry::red_metrics_middleware(metrics.clone(), req, next)
         }))
@@ -212,8 +213,60 @@ fn on_governor_error(error: GovernorError) -> Response {
     }
 }
 
-/// An opinionated, minimal CORS layer: the standard methods and `content-type` /
-/// `authorization` headers, for either any origin (`*`) or an explicit allow-list.
+/// Normalizes edge/middleware error responses (such as raw Tower timeout, body limit,
+/// and Axum 404/405 rejections) into the canonical Hephos JSON error envelope.
+async fn normalize_error_responses(req: Request, next: Next) -> Response {
+    let res = next.run(req).await;
+    let status = res.status();
+
+    // If the response is already JSON, keep it.
+    let is_json = res
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.starts_with("application/json"))
+        .unwrap_or(false);
+
+    if is_json || status.is_success() || status.is_redirection() {
+        return res;
+    }
+
+    match status {
+        StatusCode::REQUEST_TIMEOUT => {
+            let mut new_res = Error::Timeout.into_response();
+            copy_metadata_headers(res.headers(), new_res.headers_mut());
+            new_res
+        }
+        StatusCode::PAYLOAD_TOO_LARGE => {
+            let mut new_res = Error::PayloadTooLarge.into_response();
+            copy_metadata_headers(res.headers(), new_res.headers_mut());
+            new_res
+        }
+        StatusCode::METHOD_NOT_ALLOWED => {
+            let mut new_res = Error::MethodNotAllowed.into_response();
+            copy_metadata_headers(res.headers(), new_res.headers_mut());
+            new_res
+        }
+        StatusCode::NOT_FOUND => {
+            let mut new_res = Error::not_found("route").into_response();
+            copy_metadata_headers(res.headers(), new_res.headers_mut());
+            new_res
+        }
+        _ => res,
+    }
+}
+
+fn copy_metadata_headers(source: &axum::http::HeaderMap, target: &mut axum::http::HeaderMap) {
+    for (k, v) in source {
+        if k != header::CONTENT_TYPE && k != header::CONTENT_LENGTH {
+            target.insert(k.clone(), v.clone());
+        }
+    }
+}
+
+/// An opinionated, minimal CORS layer: the standard methods and safe headers,
+/// for either any origin (`*`) or an explicit allow-list. Exposes `x-request-id` so client
+/// applications can correlate requests without leaking private response headers.
 /// Credentials are not allowed (bearer-token APIs don't need cookies), so `*` is safe.
 fn cors_layer(origins: &[String]) -> CorsLayer {
     let layer = CorsLayer::new()
@@ -224,7 +277,15 @@ fn cors_layer(origins: &[String]) -> CorsLayer {
             Method::PATCH,
             Method::DELETE,
         ])
-        .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]);
+        .allow_headers([
+            header::CONTENT_TYPE,
+            header::AUTHORIZATION,
+            header::HeaderName::from_static("last-event-id"),
+            header::HeaderName::from_static("x-request-id"),
+            header::HeaderName::from_static("traceparent"),
+            header::HeaderName::from_static("tracestate"),
+        ])
+        .expose_headers([header::HeaderName::from_static("x-request-id")]);
     if origins.iter().any(|o| o == "*") {
         layer.allow_origin(Any)
     } else {
@@ -358,6 +419,10 @@ mod tests {
             .uri("/x")
             .header("origin", "https://app.example")
             .header("access-control-request-method", "GET")
+            .header(
+                "access-control-request-headers",
+                "last-event-id, x-request-id",
+            )
             .body(Body::empty())
             .unwrap();
         let response = app(Some(vec!["https://app.example".into()]))
@@ -370,6 +435,33 @@ mod tests {
                 .get("access-control-allow-origin")
                 .unwrap(),
             "https://app.example"
+        );
+        let allow_headers = response
+            .headers()
+            .get("access-control-allow-headers")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(allow_headers.contains("last-event-id"));
+        assert!(allow_headers.contains("x-request-id"));
+
+        // GET request exposes x-request-id to frontend clients
+        let get_req = HttpRequest::builder()
+            .method("GET")
+            .uri("/x")
+            .header("origin", "https://app.example")
+            .body(Body::empty())
+            .unwrap();
+        let get_res = app(Some(vec!["https://app.example".into()]))
+            .oneshot(get_req)
+            .await
+            .unwrap();
+        assert_eq!(
+            get_res
+                .headers()
+                .get("access-control-expose-headers")
+                .unwrap(),
+            "x-request-id"
         );
     }
 

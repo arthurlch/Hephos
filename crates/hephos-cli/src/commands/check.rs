@@ -78,14 +78,15 @@ fn scan_file(
     rules: &[(&'static str, &[&'static str])],
 ) -> Result<()> {
     let content = fs::read_to_string(file)?;
+    let mut in_block_comment = false;
     for (line_idx, line) in content.lines().enumerate() {
-        let trimmed = line.trim();
-        if trimmed.starts_with("//") {
+        let code_part = strip_comments_line(line, &mut in_block_comment);
+        if code_part.trim().is_empty() {
             continue;
         }
         for &(rule, patterns) in rules {
             for &pat in patterns {
-                if line.contains(pat) {
+                if code_part.contains(pat) {
                     violations.push(ArchViolation {
                         rule,
                         file: file.to_path_buf(),
@@ -100,22 +101,53 @@ fn scan_file(
     Ok(())
 }
 
+fn strip_comments_line(line: &str, in_block_comment: &mut bool) -> String {
+    let mut result = String::new();
+    let mut chars = line.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if *in_block_comment {
+            if c == '*' && chars.peek() == Some(&'/') {
+                chars.next();
+                *in_block_comment = false;
+            }
+        } else if c == '/' && chars.peek() == Some(&'*') {
+            chars.next();
+            *in_block_comment = true;
+        } else if c == '/' && chars.peek() == Some(&'/') {
+            // Rest of the line is a single-line comment
+            break;
+        } else {
+            result.push(c);
+        }
+    }
+
+    result
+}
+
 fn find_rs_files(dir: &Path, single_file: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
     if single_file.is_file() {
         files.push(single_file.to_path_buf());
     }
     if dir.is_dir() {
-        if let Ok(entries) = fs::read_dir(dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("rs") {
-                    files.push(path);
-                }
+        collect_rs_files(dir, &mut files);
+    }
+    files.sort();
+    files
+}
+
+fn collect_rs_files(dir: &Path, files: &mut Vec<PathBuf>) {
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                collect_rs_files(&path, files);
+            } else if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("rs") {
+                files.push(path);
             }
         }
     }
-    files
 }
 
 #[cfg(test)]
@@ -182,5 +214,52 @@ mod tests {
 
         let violations = check_project(temp.path()).unwrap();
         assert_eq!(violations.len(), 2);
+    }
+
+    #[test]
+    fn test_check_project_nested_subdirectories() {
+        let temp = TempDir::new();
+        let nested_api = temp.path().join("src").join("api").join("v1");
+        fs::create_dir_all(&nested_api).unwrap();
+
+        fs::write(nested_api.join("orders.rs"), "use crate::repos::orders;\n").unwrap();
+
+        let violations = check_project(temp.path()).unwrap();
+        assert_eq!(violations.len(), 1);
+        assert_eq!(
+            violations[0].rule,
+            "handler imports a repo (api/ must not depend on repos/)"
+        );
+    }
+
+    #[test]
+    fn test_check_project_comment_false_positives() {
+        let temp = TempDir::new();
+        let api = temp.path().join("src").join("api");
+        fs::create_dir_all(&api).unwrap();
+
+        fs::write(
+            api.join("docs.rs"),
+            r#"
+            // Line comment: use crate::repos::items;
+            /* Block comment single line: ctx.state().db.pool(); */
+            /*
+             * Multi-line block comment:
+             * use crate::repos;
+             * sqlx::query!
+             */
+            pub async fn handler(ctx: Ctx) -> Result<Json<()>> {
+                // Inline comment at end of valid line:
+                Ok(Json(())) // see crate::repos for documentation
+            }
+            "#,
+        )
+        .unwrap();
+
+        let violations = check_project(temp.path()).unwrap();
+        assert!(
+            violations.is_empty(),
+            "Comments should not trigger violations, got: {violations:?}"
+        );
     }
 }

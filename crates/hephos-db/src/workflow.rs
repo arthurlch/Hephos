@@ -662,9 +662,9 @@ impl WorkflowStore for PostgresWorkflowStore {
                 SET state = $3,
                     decision_payload = $4::jsonb,
                     decided_at = NOW()
-                WHERE workflow_id = $1 AND approval_name = $2
+                WHERE workflow_id = $1 AND approval_name = $2 AND state = 'pending'
             "#;
-            sqlx::query(query)
+            let res = sqlx::query(query)
                 .bind(id)
                 .bind(&approval_name)
                 .bind(state.as_str())
@@ -672,6 +672,32 @@ impl WorkflowStore for PostgresWorkflowStore {
                 .execute(self.db.pool())
                 .await
                 .map_err(into_internal)?;
+
+            if res.rows_affected() == 0 {
+                let check_query = r#"
+                    SELECT state FROM hephos_workflow_approvals
+                    WHERE workflow_id = $1 AND approval_name = $2
+                "#;
+                let existing = sqlx::query(check_query)
+                    .bind(id)
+                    .bind(&approval_name)
+                    .fetch_optional(self.db.pool())
+                    .await
+                    .map_err(into_internal)?;
+
+                match existing {
+                    Some(row) => {
+                        let cur_state: String = row.try_get("state").map_err(into_internal)?;
+                        return Err(Error::conflict(format!(
+                            "approval '{approval_name}' has already been decided with state '{cur_state}'"
+                        )));
+                    }
+                    None => {
+                        return Err(Error::not_found(format!("approval '{approval_name}'")));
+                    }
+                }
+            }
+
             Ok(())
         })
     }
@@ -1026,14 +1052,23 @@ impl WorkflowStore for InMemoryWorkflowStore {
         payload: Option<serde_json::Value>,
     ) -> BoxFuture<'_, Result<()>> {
         let key = (id, approval_name.to_string());
+        let approval_name = approval_name.to_string();
         Box::pin(async move {
             let mut guard = self.approvals.write().await;
             if let Some(record) = guard.get_mut(&key) {
+                if record.state != ApprovalState::Pending {
+                    return Err(Error::conflict(format!(
+                        "approval '{approval_name}' has already been decided with state {:?}",
+                        record.state
+                    )));
+                }
                 record.state = state;
                 record.decision_payload = payload;
                 record.decided_at = Some(OffsetDateTime::now_utc());
+                Ok(())
+            } else {
+                Err(Error::not_found(format!("approval '{approval_name}'")))
             }
-            Ok(())
         })
     }
 
@@ -1348,7 +1383,7 @@ impl WorkflowContext {
             .await?;
 
         let start = tokio::time::Instant::now();
-        let poll_interval = Duration::from_millis(50);
+        let mut poll_interval = Duration::from_millis(50);
 
         loop {
             if self.is_cancelled() {
@@ -1365,10 +1400,17 @@ impl WorkflowContext {
             }
 
             if start.elapsed() >= timeout {
-                self.store
+                match self
+                    .store
                     .decide_approval(self.id, approval_name, ApprovalState::TimedOut, None)
-                    .await?;
-                return Ok(ApprovalDecision::TimedOut);
+                    .await
+                {
+                    Ok(()) => return Ok(ApprovalDecision::TimedOut),
+                    Err(Error::Conflict(_)) => {
+                        // Concurrently decided right before timeout; fall through to inspect state
+                    }
+                    Err(e) => return Err(e),
+                }
             }
 
             let current = self
@@ -1396,6 +1438,8 @@ impl WorkflowContext {
                 }
                 ApprovalState::Pending => {
                     tokio::time::sleep(poll_interval).await;
+                    poll_interval =
+                        std::cmp::min(poll_interval.saturating_mul(2), Duration::from_secs(1));
                 }
             }
         }
@@ -1692,6 +1736,12 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(decision2, ApprovalDecision::TimedOut);
+
+        // A late approval on an already timed-out workflow must be rejected with conflict
+        let late_res = workflows
+            .approve(flow2.workflow_id(), "stale_signoff", None)
+            .await;
+        assert!(matches!(late_res.unwrap_err(), Error::Conflict(_)));
     }
 
     #[tokio::test]

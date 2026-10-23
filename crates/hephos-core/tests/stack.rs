@@ -90,6 +90,7 @@ async fn slow_handler_is_cut_by_the_timeout() {
     let client = TestClient::with_stack(routes(), S, Duration::from_millis(50), 1024 * 1024);
     let res = client.get("/slow").await;
     assert_eq!(res.status(), 408);
+    assert_eq!(res.error_kind(), Some("timeout".to_string()));
 }
 
 #[tokio::test]
@@ -114,6 +115,23 @@ async fn oversized_body_is_rejected() {
 
     let res = client.send(request).await;
     assert_eq!(res.status(), 413);
+    assert_eq!(res.error_kind(), Some("payload_too_large".to_string()));
+}
+
+#[tokio::test]
+async fn method_not_allowed_returns_canonical_405_envelope() {
+    let client = TestClient::new(routes(), S);
+    let res = client.post_json("/whoami", &json!({})).await;
+    assert_eq!(res.status(), 405);
+    assert_eq!(res.error_kind(), Some("method_not_allowed".to_string()));
+}
+
+#[tokio::test]
+async fn unmapped_route_returns_canonical_404_envelope() {
+    let client = TestClient::new(routes(), S);
+    let res = client.get("/nonexistent-path").await;
+    assert_eq!(res.status(), 404);
+    assert_eq!(res.error_kind(), Some("not_found".to_string()));
 }
 
 #[tokio::test]

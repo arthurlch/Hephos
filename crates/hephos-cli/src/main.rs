@@ -1,10 +1,12 @@
+#![forbid(unsafe_code)]
+
 use std::path::PathBuf;
 
 use anyhow::{Result, bail};
 use clap::{Args, Parser, Subcommand};
 use hephos_cli::{
-    DiagnosticStatus, check_project, format_json, format_table, generate_openapi,
-    generate_resource, run_doctor, scaffold_app, scan_routes,
+    DiagnosticStatus, check_project, format_json, format_table, generate_migration,
+    generate_openapi, generate_resource, run_doctor, scaffold_app, scan_routes,
 };
 
 #[derive(Parser, Debug)]
@@ -51,6 +53,10 @@ struct NewArgs {
     /// Path to a local hephos crate checkout (for offline development/tests).
     #[arg(long)]
     local_path: Option<PathBuf>,
+
+    /// Scaffold database-ready application with Db in AppState and sqlx/uuid dependencies.
+    #[arg(long)]
+    db: bool,
 }
 
 #[derive(Args, Debug)]
@@ -122,7 +128,7 @@ fn main() -> Result<()> {
                     }
                 }
             };
-            scaffold_app(&pkg_name, &target_dir, args.local_path.as_deref())?;
+            scaffold_app(&pkg_name, &target_dir, args.local_path.as_deref(), args.db)?;
             println!(
                 "Created Hephos application '{}' at {}",
                 pkg_name,
@@ -198,19 +204,24 @@ fn main() -> Result<()> {
                 Ok(())
             }
         }
-        Command::Generate(args) => {
-            if args.artifact_type != "resource" {
-                bail!(
-                    "Unknown artifact type '{}'. Supported: 'resource'",
-                    args.artifact_type
-                );
+        Command::Generate(args) => match args.artifact_type.as_str() {
+            "resource" => {
+                let files = generate_resource(&args.path, &args.name)?;
+                println!("Generated resource '{}':", args.name);
+                for f in files {
+                    println!("  ✓ {f}");
+                }
+                Ok(())
             }
-            let files = generate_resource(&args.path, &args.name)?;
-            println!("Generated resource '{}':", args.name);
-            for f in files {
-                println!("  ✓ {f}");
+            "migration" => {
+                let file = generate_migration(&args.path, &args.name)?;
+                println!("Generated migration '{}':", args.name);
+                println!("  ✓ {file}");
+                Ok(())
             }
-            Ok(())
-        }
+            other => {
+                bail!("Unknown artifact type '{other}'. Supported: 'resource', 'migration'");
+            }
+        },
     }
 }

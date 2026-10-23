@@ -15,6 +15,37 @@ pub struct Completion {
     pub response_schema: Option<serde_json::Value>,
 }
 
+impl Completion {
+    /// Construct a basic completion request with messages.
+    pub fn new(messages: Vec<Message>) -> Self {
+        Completion {
+            system: String::new(),
+            messages,
+            tools: Vec::new(),
+            max_tokens: 4096,
+            response_schema: None,
+        }
+    }
+
+    /// Set the system prompt.
+    pub fn with_system(mut self, system: impl Into<String>) -> Self {
+        self.system = system.into();
+        self
+    }
+
+    /// Set the tool schemas.
+    pub fn with_tools(mut self, tools: Vec<ToolSchema>) -> Self {
+        self.tools = tools;
+        self
+    }
+
+    /// Set the token limit.
+    pub fn with_max_tokens(mut self, max_tokens: u32) -> Self {
+        self.max_tokens = max_tokens;
+        self
+    }
+}
+
 /// A model provider.
 ///
 /// The one abstraction over LLM vendors. Implementations are thin HTTP clients
@@ -67,5 +98,13 @@ mod tests {
 
         let debug_str = format!("{:?}", completion);
         assert!(debug_str.contains("you are a helpful assistant"));
+
+        let basic = Completion::new(vec![Message::user("ping")])
+            .with_system("sys")
+            .with_max_tokens(2048);
+        assert_eq!(basic.system, "sys");
+        assert_eq!(basic.messages.len(), 1);
+        assert_eq!(basic.max_tokens, 2048);
+        assert!(basic.tools.is_empty());
     }
 }

@@ -7,14 +7,17 @@
 //! - [`doctor::run_doctor`]: inspects developer environment and dependencies.
 //! - [`generate::generate_resource`]: scaffolds canonical domain/repo/service/api resources.
 
-pub mod check;
-pub mod doctor;
-pub mod generate;
-pub mod routes;
-pub mod scaffold;
+#![forbid(unsafe_code)]
 
-pub use check::{ArchViolation, check_project};
-pub use doctor::{DiagnosticItem, DiagnosticStatus, run_doctor};
-pub use generate::generate_resource;
-pub use routes::{DiscoveredRoute, format_json, format_table, generate_openapi, scan_routes};
-pub use scaffold::scaffold_app;
+pub mod commands;
+
+pub use commands::check::{ArchViolation, check_project};
+pub use commands::doctor::{DiagnosticItem, DiagnosticStatus, run_doctor};
+pub use commands::generate::{
+    generate_migration, generate_resource, validate_migration_name, validate_resource_name,
+};
+pub use commands::routes::{
+    DiscoveredRoute, format_json, format_table, generate_openapi, scan_routes,
+};
+pub use commands::scaffold::scaffold_app;
+pub use commands::{check, doctor, generate, routes, scaffold};

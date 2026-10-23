@@ -32,7 +32,14 @@ impl UsersRepo {
         .bind(email)
         .bind(password_hash)
         .fetch_one(self.db.pool())
-        .await?;
+        .await
+        .map_err(|e| {
+            if hephos::db::is_unique_violation(&e) {
+                Error::conflict("email already registered")
+            } else {
+                e.into()
+            }
+        })?;
 
         Ok(user)
     }

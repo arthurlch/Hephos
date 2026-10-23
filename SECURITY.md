@@ -26,6 +26,12 @@ dynamically guaranteed:
    redacting them from `Debug`, `Display`, and serialization output.
 7. **Identity Attribution & Audit Trail**: Security-sensitive actions record an `AuditEvent` with actor identity,
    action name, resource ID, outcome, and timestamp.
+8. **Strict Input & Path Validation in Tooling**: Scaffolding and code generation in `hephos-cli` strictly
+   validate all identifiers against ASCII alphanumeric rules and Rust reserved keywords, preventing path traversal,
+   code injection, and SQL injection in generated migrations and resource files.
+9. **Streaming Boundary & Memory Caps**: Agent SSE streaming parsers buffer chunks across multi-byte UTF-8
+   boundaries and enforce hard capacity limits (2 MiB) to prevent memory exhaustion DoS attacks from rogue
+   or compromised upstream model APIs.
 
 ---
 
@@ -63,6 +69,10 @@ dynamically guaranteed:
 | **Connection Flooding** | File descriptor exhaustion | `ConnectionCap` rejecting excess concurrent connections with `503 Service Unavailable`. | `tests/conn.rs`, `tests/load_shed.rs` |
 | **DNS Rebinding in MCP HTTP Transport** | Local network access from web | Streamable HTTP endpoints mountable behind `into_protected_router` with bearer token auth. | `hephos-mcp::tests::into_protected_router_mounts_auth_guarded_endpoint` |
 | **Tool Execution Beyond Boundary** | Unbounded model actions | `Limits` enforce `max_turns`, `max_tokens`, `timeout`, and `max_tool_calls_per_turn`. Tools validate input schemas via `schemars`. | `hephos-agent::tests::agent` |
+| **Path Traversal / Injection in Scaffolding** | Overwrite host files / inject SQL | Strict resource and migration name validation rejecting path delimiters (`/`, `\`, `..`), null bytes, invalid identifiers, and SQL injection syntax in `hephos-cli`. | `hephos-cli::commands::generate::tests` |
+| **Stream Memory DoS in Agent SSE** | Memory exhaustion via endless stream | SSE lines parser enforces a 2 MiB buffer ceiling (`MAX_SSE_BUFFER_BYTES`) and handles chunk-split UTF-8 graphemes safely. | `hephos-agent::providers::common::tests` |
+| **Secret File Path Injection** | Arbitrary file read via null bytes | `FileSecretProvider` rejects paths containing null characters (`\0`). | `hephos-core::security::secret::tests` |
+| **CORS Misconfiguration** | Client correlation failure or leaked headers | Tower CORS layer securely exposes `x-request-id` and permits standard telemetry headers (`traceparent`, `tracestate`, `last-event-id`). | `hephos-core::stack::tests::cors_preflight_allows_listed_origin` |
 | **Supply Chain Vulnerability** | Remote code execution / backdoors | `cargo-deny` blocking in CI on advisories, banned crates, licenses, and unknown registries. | CI job `deny` |
 
 ---
@@ -109,7 +119,24 @@ Custom audit sinks can be registered via `hephos_core::security::set_audit_logge
 
 ---
 
-## 5. Reporting a Vulnerability
+## 5. Operational Security & Deployment Best Practices
+
+### 5.1 Reverse Proxies & IP Spoofing Protection
+Hephos utilizes `tower_governor::key_extractor::SmartIpKeyExtractor` for per-client IP rate limiting. When deployed behind a reverse proxy (e.g., NGINX, Envoy, AWS ALB, Cloudflare):
+- Ensure the edge proxy strips untrusted client-supplied `X-Forwarded-For` and `Forwarded` headers before appending the true client IP.
+- Failure to sanitize inbound proxy headers allows untrusted clients to cycle spoofed IP addresses, evading rate limits.
+
+### 5.2 Transport Layer Security (TLS) & HSTS
+- Always serve over TLS in production environments or terminate TLS at a secure edge gateway.
+- Enable `HEPHOS_HSTS=true` (or set the header at your ingress) to enforce Strict-Transport-Security (1 year duration, including subdomains).
+
+### 5.3 Secret Ingestion & Principle of Least Privilege
+- Prefer filesystem secrets mounted into `/run/secrets/` or Docker secrets (`FileSecretProvider`) over environment variables (`EnvSecretProvider`) to prevent accidental leaks in environment dumps or child process tables.
+- Restrict file permissions on secrets to `0400` or `0600` readable only by the application service user.
+
+---
+
+## 6. Reporting a Vulnerability
 
 We take the security of Hephos seriously. If you discover a security vulnerability in Hephos:
 
