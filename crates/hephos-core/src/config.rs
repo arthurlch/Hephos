@@ -20,6 +20,7 @@ use crate::error::{Error, Result};
 /// | `HEPHOS_CORS_ORIGINS`     | *(unset)*      | Comma-separated allowed origins, or `*`. Unset = no CORS. |
 /// | `HEPHOS_RATE_LIMIT_RPS`   | *(unset)*      | Quota replenishment in requests/sec per IP. Unset = disabled. |
 /// | `HEPHOS_RATE_LIMIT_BURST` | *(same as RPS)*| Maximum burst capacity per IP. |
+/// | `HEPHOS_RATE_LIMIT_TRUST_PROXY` | `off`    | Key on forwarded IP headers. Enable **only** behind a trusted proxy; default uses the peer socket IP. |
 /// | `HEPHOS_CONCURRENCY_LIMIT`| *(unset)*      | Max concurrent in-flight requests before load shedding (503). |
 /// | `HEPHOS_MAX_CONNECTIONS`  | *(unset)*      | Max concurrent active connections before rejection (503). |
 /// | `HEPHOS_OTLP_ENDPOINT`    | *(unset)*      | OTLP HTTP collector endpoint (e.g. `http://localhost:4318`). |
@@ -60,18 +61,29 @@ pub struct Config {
     pub traces_enabled: bool,
 }
 
-/// Rate limiting configuration (`HEPHOS_RATE_LIMIT_RPS`, `HEPHOS_RATE_LIMIT_BURST`).
+/// Rate limiting configuration (`HEPHOS_RATE_LIMIT_RPS`, `HEPHOS_RATE_LIMIT_BURST`,
+/// `HEPHOS_RATE_LIMIT_TRUST_PROXY`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RateLimitConfig {
     /// Quota replenishment rate in requests per second.
     pub rps: u64,
     /// Maximum burst capacity allowed before rate limiting triggers.
     pub burst: u32,
+    /// When `true`, the client key is taken from forwarded headers
+    /// (`X-Forwarded-For` / `X-Real-IP` / `Forwarded`); enable this **only** when a
+    /// trusted reverse proxy sets them, because a directly-exposed server lets any
+    /// client forge these headers and mint a fresh bucket per request, defeating the
+    /// limiter. When `false` (the default) the unspoofable peer socket address is used.
+    pub trust_proxy: bool,
 }
 
 impl RateLimitConfig {
     pub fn new(rps: u64, burst: u32) -> Self {
-        RateLimitConfig { rps, burst }
+        RateLimitConfig {
+            rps,
+            burst,
+            trust_proxy: false,
+        }
     }
 
     /// Default sensible limit for standard APIs (50 RPS, burst 100).
@@ -79,12 +91,23 @@ impl RateLimitConfig {
         RateLimitConfig {
             rps: 50,
             burst: 100,
+            trust_proxy: false,
         }
     }
 
     /// Strict limit for sensitive routes like auth, password reset, or token issuance (5 RPS, burst 10).
     pub fn sensitive() -> Self {
-        RateLimitConfig { rps: 5, burst: 10 }
+        RateLimitConfig {
+            rps: 5,
+            burst: 10,
+            trust_proxy: false,
+        }
+    }
+
+    /// Trust forwarded client-IP headers for keying. Enable only behind a trusted proxy.
+    pub fn trust_proxy(mut self, yes: bool) -> Self {
+        self.trust_proxy = yes;
+        self
     }
 }
 
@@ -110,6 +133,7 @@ struct RawEnv<'a> {
     cors_origins: Option<&'a str>,
     rate_limit_rps: Option<&'a str>,
     rate_limit_burst: Option<&'a str>,
+    rate_limit_trust_proxy: Option<&'a str>,
     concurrency_limit: Option<&'a str>,
     max_connections: Option<&'a str>,
     otlp_endpoint: Option<&'a str>,
@@ -130,6 +154,7 @@ impl Config {
         let cors_origins = std::env::var("HEPHOS_CORS_ORIGINS").ok();
         let rate_limit_rps = std::env::var("HEPHOS_RATE_LIMIT_RPS").ok();
         let rate_limit_burst = std::env::var("HEPHOS_RATE_LIMIT_BURST").ok();
+        let rate_limit_trust_proxy = std::env::var("HEPHOS_RATE_LIMIT_TRUST_PROXY").ok();
         let concurrency_limit = std::env::var("HEPHOS_CONCURRENCY_LIMIT").ok();
         let max_connections = std::env::var("HEPHOS_MAX_CONNECTIONS").ok();
         let otlp_endpoint = std::env::var("HEPHOS_OTLP_ENDPOINT")
@@ -148,6 +173,7 @@ impl Config {
             cors_origins: cors_origins.as_deref(),
             rate_limit_rps: rate_limit_rps.as_deref(),
             rate_limit_burst: rate_limit_burst.as_deref(),
+            rate_limit_trust_proxy: rate_limit_trust_proxy.as_deref(),
             concurrency_limit: concurrency_limit.as_deref(),
             max_connections: max_connections.as_deref(),
             otlp_endpoint: otlp_endpoint.as_deref(),
@@ -239,7 +265,15 @@ impl Config {
                     }
                     None => u32::try_from(rps).unwrap_or(u32::MAX),
                 };
-                Some(RateLimitConfig { rps, burst })
+                let trust_proxy = matches!(
+                    env.rate_limit_trust_proxy.map(str::trim),
+                    Some("1" | "true" | "yes" | "on" | "TRUE" | "True")
+                );
+                Some(RateLimitConfig {
+                    rps,
+                    burst,
+                    trust_proxy,
+                })
             }
             (None, Some(burst_str)) => {
                 return Err(Error::invalid(format!(
@@ -347,6 +381,7 @@ mod tests {
             cors_origins: Some("https://a.example, https://b.example"),
             rate_limit_rps: Some("100"),
             rate_limit_burst: Some("250"),
+            rate_limit_trust_proxy: None,
             concurrency_limit: Some("64"),
             max_connections: Some("128"),
             otlp_endpoint: Some("http://localhost:4318"),
@@ -372,7 +407,8 @@ mod tests {
             config.rate_limit,
             Some(RateLimitConfig {
                 rps: 100,
-                burst: 250
+                burst: 250,
+                trust_proxy: false
             })
         );
         assert_eq!(config.concurrency_limit, Some(64));
@@ -402,6 +438,35 @@ mod tests {
     }
 
     #[test]
+    fn rate_limit_defaults_to_no_proxy_trust_and_is_opt_in() {
+        // Default: forwarded headers are NOT trusted (keyed on peer IP).
+        let default_cfg = Config::parse(RawEnv {
+            rate_limit_rps: Some("50"),
+            ..Default::default()
+        })
+        .unwrap();
+        assert!(!default_cfg.rate_limit.unwrap().trust_proxy);
+
+        // Opt-in via env.
+        let trusted = Config::parse(RawEnv {
+            rate_limit_rps: Some("50"),
+            rate_limit_trust_proxy: Some("true"),
+            ..Default::default()
+        })
+        .unwrap();
+        assert!(trusted.rate_limit.unwrap().trust_proxy);
+
+        // Non-truthy values stay off.
+        let off = Config::parse(RawEnv {
+            rate_limit_rps: Some("50"),
+            rate_limit_trust_proxy: Some("no"),
+            ..Default::default()
+        })
+        .unwrap();
+        assert!(!off.rate_limit.unwrap().trust_proxy);
+    }
+
+    #[test]
     fn rate_limit_burst_defaults_to_rps() {
         let config = Config::parse(RawEnv {
             rate_limit_rps: Some("50"),
@@ -410,7 +475,11 @@ mod tests {
         .unwrap();
         assert_eq!(
             config.rate_limit,
-            Some(RateLimitConfig { rps: 50, burst: 50 })
+            Some(RateLimitConfig {
+                rps: 50,
+                burst: 50,
+                trust_proxy: false
+            })
         );
     }
 

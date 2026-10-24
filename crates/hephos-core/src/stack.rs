@@ -20,7 +20,7 @@ use tokio_util::sync::CancellationToken;
 use tower_governor::GovernorLayer;
 use tower_governor::errors::GovernorError;
 use tower_governor::governor::GovernorConfigBuilder;
-use tower_governor::key_extractor::SmartIpKeyExtractor;
+use tower_governor::key_extractor::{PeerIpKeyExtractor, SmartIpKeyExtractor};
 use tower_http::catch_panic::CatchPanicLayer;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::limit::RequestBodyLimitLayer;
@@ -96,32 +96,61 @@ where
     };
 
     let app_router = if let Some(rl) = config.rate_limit {
-        let mut builder = GovernorConfigBuilder::default()
-            .key_extractor(SmartIpKeyExtractor)
-            .use_headers();
-        builder
-            .period(Duration::from_nanos((1_000_000_000 / rl.rps).max(1)))
-            .burst_size(rl.burst);
-        let gov_conf = builder.finish().expect("valid rate limit config");
-        let limiter = Arc::downgrade(gov_conf.limiter());
-        let cancel = shutdown.clone();
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(60));
-            interval.tick().await;
-            loop {
-                tokio::select! {
-                    _ = cancel.cancelled() => break,
-                    _ = interval.tick() => {
-                        match limiter.upgrade() {
+        // `.max(1)` guards the programmatic `App::rate_limit(..)` path: `rps == 0` would
+        // divide-by-zero and `burst == 0` makes governor's `.finish()` return `None`
+        // (panicking the `.expect`). The env path already rejects both; this makes the
+        // builder total so the public API can never panic at startup.
+        let period = Duration::from_nanos((1_000_000_000 / rl.rps.max(1)).max(1));
+        let burst = rl.burst.max(1);
+        // Default: key on the unspoofable peer socket IP. Only trust forwarded headers
+        // (`X-Forwarded-For` etc.) when explicitly configured behind a trusted proxy —
+        // otherwise a directly-exposed server lets any client forge a fresh bucket per
+        // request and bypass the limiter entirely.
+        if rl.trust_proxy {
+            let mut builder = GovernorConfigBuilder::default()
+                .key_extractor(SmartIpKeyExtractor)
+                .use_headers();
+            builder.period(period).burst_size(burst);
+            let gov_conf = builder.finish().expect("valid rate limit config");
+            let limiter = Arc::downgrade(gov_conf.limiter());
+            let cancel = shutdown.clone();
+            tokio::spawn(async move {
+                let mut interval = tokio::time::interval(Duration::from_secs(60));
+                interval.tick().await;
+                loop {
+                    tokio::select! {
+                        _ = cancel.cancelled() => break,
+                        _ = interval.tick() => match limiter.upgrade() {
                             Some(limiter) => limiter.retain_recent(),
                             None => break,
-                        }
+                        },
                     }
                 }
-            }
-        });
-        let layer = GovernorLayer::new(gov_conf).error_handler(on_governor_error);
-        app_router.layer(layer)
+            });
+            app_router.layer(GovernorLayer::new(gov_conf).error_handler(on_governor_error))
+        } else {
+            let mut builder = GovernorConfigBuilder::default()
+                .key_extractor(PeerIpKeyExtractor)
+                .use_headers();
+            builder.period(period).burst_size(burst);
+            let gov_conf = builder.finish().expect("valid rate limit config");
+            let limiter = Arc::downgrade(gov_conf.limiter());
+            let cancel = shutdown.clone();
+            tokio::spawn(async move {
+                let mut interval = tokio::time::interval(Duration::from_secs(60));
+                interval.tick().await;
+                loop {
+                    tokio::select! {
+                        _ = cancel.cancelled() => break,
+                        _ = interval.tick() => match limiter.upgrade() {
+                            Some(limiter) => limiter.retain_recent(),
+                            None => break,
+                        },
+                    }
+                }
+            });
+            app_router.layer(GovernorLayer::new(gov_conf).error_handler(on_governor_error))
+        }
     } else {
         app_router
     };
