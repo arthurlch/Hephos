@@ -139,12 +139,21 @@ impl AuthService {
         Ok(user)
     }
 
-    pub async fn login(&self, _ctx: &Ctx, input: Credentials) -> Result<TokenPair> {
+    pub async fn login(&self, ctx: &Ctx, input: Credentials) -> Result<TokenPair> {
         // Reject over-length input before hashing: no registered password can exceed
         // the policy bound, so this is never a valid login, and it stops an attacker
         // forcing argon2 work on a multi-megabyte body. `Unauthorized` (not `invalid`)
         // keeps login's existence-opacity — the same answer a wrong password gets.
         if input.password.len() > MAX_PASSWORD_LEN {
+            ctx.audit(
+                "login",
+                "user",
+                None::<String>,
+                AuditOutcome::Failed {
+                    error: "oversized credentials".into(),
+                },
+                serde_json::json!({}),
+            );
             return Err(Error::Unauthorized);
         }
         let row = UserRepo::find_auth_by_email(self.db.pool(), &input.email).await?;
@@ -159,14 +168,36 @@ impl AuthService {
             }
         };
 
-        let row = row.filter(|_| authenticated).ok_or(Error::Unauthorized)?;
-        self.mint_pair(self.db.pool(), row.id, row.roles).await
+        match row.filter(|_| authenticated) {
+            Some(row) => {
+                ctx.audit(
+                    "login",
+                    "user",
+                    Some(row.id.to_string()),
+                    AuditOutcome::Success,
+                    serde_json::json!({}),
+                );
+                self.mint_pair(self.db.pool(), row.id, row.roles).await
+            }
+            None => {
+                ctx.audit(
+                    "login",
+                    "user",
+                    None::<String>,
+                    AuditOutcome::Failed {
+                        error: "invalid credentials".into(),
+                    },
+                    serde_json::json!({}),
+                );
+                Err(Error::Unauthorized)
+            }
+        }
     }
 
     /// Exchange a valid refresh token for a new access + refresh pair, rotating the
     /// presented token. If an *already-revoked* token is presented the token has been
     /// stolen (the legitimate client rotated it away), so the whole family is revoked.
-    pub async fn refresh(&self, _ctx: &Ctx, input: RefreshRequest) -> Result<TokenPair> {
+    pub async fn refresh(&self, ctx: &Ctx, input: RefreshRequest) -> Result<TokenPair> {
         let hash = token::hash_opaque_token(&input.refresh_token);
 
         let mut tx = self.db.begin().await?;
@@ -177,6 +208,15 @@ impl AuthService {
         if stored.revoked_at.is_some() {
             RefreshTokenRepo::revoke_all_for_user(tx.exec(), stored.user_id).await?;
             tx.commit().await?;
+            ctx.audit(
+                "refresh_token_reuse",
+                "user",
+                Some(stored.user_id.to_string()),
+                AuditOutcome::Denied {
+                    reason: "replayed revoked refresh token; token family revoked".into(),
+                },
+                serde_json::json!({}),
+            );
             return Err(Error::Unauthorized);
         }
         if stored.expires_at <= OffsetDateTime::now_utc() {
@@ -193,6 +233,15 @@ impl AuthService {
         if !RefreshTokenRepo::revoke(tx.exec(), stored.id).await? {
             RefreshTokenRepo::revoke_all_for_user(tx.exec(), stored.user_id).await?;
             tx.commit().await?;
+            ctx.audit(
+                "refresh_token_reuse",
+                "user",
+                Some(stored.user_id.to_string()),
+                AuditOutcome::Denied {
+                    reason: "lost rotation race; token family revoked".into(),
+                },
+                serde_json::json!({}),
+            );
             return Err(Error::Unauthorized);
         }
         let pair = self.mint_pair(tx.exec(), user.id, user.roles).await?;
