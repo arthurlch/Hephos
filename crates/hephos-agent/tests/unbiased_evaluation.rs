@@ -330,24 +330,13 @@ fn experiment_1_error_payload_tradeoffs() {
         "  Code-Repair Agent:           A={:.2}  B={:.2}  C={:.2}",
         ACTIONABILITY.repair_a, ACTIONABILITY.repair_b, ACTIONABILITY.repair_c
     );
-    // The qualitative claim the paper draws: A wins at runtime, C wins at repair.
-    // `black_box` keeps these as runtime checks (the rubric is a const source of truth).
-    let runtime = [
-        std::hint::black_box(ACTIONABILITY.runtime_a),
-        std::hint::black_box(ACTIONABILITY.runtime_c),
-    ];
-    let repair = [
-        std::hint::black_box(ACTIONABILITY.repair_a),
-        std::hint::black_box(ACTIONABILITY.repair_c),
-    ];
-    assert!(
-        runtime[0] > runtime[1],
-        "A should beat C for runtime orchestration"
-    );
-    assert!(
-        repair[1] > repair[0],
-        "C should beat A for source-code repair"
-    );
+    // NOTE: the actionability rubric is author-assigned engineering judgement, NOT a
+    // measurement. We deliberately do NOT assert an ordering here — a previous version
+    // did (`black_box(1.0) > black_box(0.30)`), but that assertion only tested
+    // arithmetic on constants we picked, i.e. tautological coverage theater. The rubric
+    // is printed for the reader to weigh; only the measured quantities in this file
+    // (token sizes, serialization latency, simulated executions, schema sizes) carry
+    // assertions. See the paper's §7.3 (Construct Validity) for why.
 }
 
 // ============================================================================

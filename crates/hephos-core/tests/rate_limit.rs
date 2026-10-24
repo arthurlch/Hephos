@@ -4,7 +4,8 @@
 //! 1. Requests under burst limit succeed.
 //! 2. Exceeding burst limit returns 429 with standard `rate_limited` error body,
 //!    `retry-after` header, and request correlation.
-//! 3. Independent quotas per client IP (via `SmartIpKeyExtractor` / `x-forwarded-for`).
+//! 3. Forwarded IP headers (`x-forwarded-for`) are IGNORED for keying by default
+//!    (keyed on the unspoofable peer IP); trusting them is opt-in via `trust_proxy`.
 //! 4. Probes (`/health`, `/ready`) are NEVER rate-limited even when client quota is exhausted.
 
 use axum::body::Body;
@@ -73,35 +74,29 @@ async fn exceeding_burst_returns_429_with_rate_limited_error_contract() {
 }
 
 #[tokio::test]
-async fn distinct_ips_are_rate_limited_independently() {
+async fn forwarded_headers_are_ignored_for_keying_by_default() {
+    // Security: without `trust_proxy`, the limiter keys on the unspoofable peer socket
+    // IP and must IGNORE `X-Forwarded-For`. Otherwise a directly-exposed server lets a
+    // client forge a different header per request and mint a fresh bucket each time,
+    // bypassing the limiter. Under the in-memory TestClient both forged "IPs" resolve
+    // to the same synthesized loopback peer, so they share one bucket.
     let client = TestClient::with_rate_limit(routes(), S, 1, 1);
 
-    let req_ip1 = || {
+    let forged = |xff: &str| {
         Request::builder()
             .uri("/ping")
-            .header("x-forwarded-for", "198.51.100.1")
-            .body(Body::empty())
-            .unwrap()
-    };
-    let req_ip2 = || {
-        Request::builder()
-            .uri("/ping")
-            .header("x-forwarded-for", "198.51.100.2")
+            .header("x-forwarded-for", xff)
             .body(Body::empty())
             .unwrap()
     };
 
-    // IP 1: first request passes
-    let res1 = client.send(req_ip1()).await;
-    assert_eq!(res1.status(), 200);
+    // First request consumes the single burst token for the (shared) peer bucket.
+    assert_eq!(client.send(forged("198.51.100.1")).await.status(), 200);
 
-    // IP 1: second request rate-limited
-    let res2 = client.send(req_ip1()).await;
-    assert_eq!(res2.status(), 429);
-
-    // IP 2: first request passes independently of IP 1
-    let res3 = client.send(req_ip2()).await;
-    assert_eq!(res3.status(), 200);
+    // A DIFFERENT forged X-Forwarded-For must NOT get an independent bucket — same peer,
+    // so the limiter still applies. (With `trust_proxy` enabled behind a real proxy this
+    // would instead key per forwarded IP; that opt-in is covered by config unit tests.)
+    assert_eq!(client.send(forged("198.51.100.2")).await.status(), 429);
 }
 
 #[tokio::test]
