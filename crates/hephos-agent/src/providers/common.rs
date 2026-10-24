@@ -8,7 +8,13 @@ pub(crate) fn default_http_client() -> reqwest::Client {
         .timeout(std::time::Duration::from_secs(60))
         .connect_timeout(std::time::Duration::from_secs(10))
         .build()
-        .unwrap_or_else(|_| reqwest::Client::new())
+        .unwrap_or_else(|e| {
+            // Extremely rare (TLS backend init failure). Warn loudly: the fallback
+            // client has NO request timeout, so a hung provider socket would then be
+            // bounded only by the agent's wall-clock `Limits.timeout`.
+            tracing::error!(error = %e, "failed to build timeout-configured HTTP client; falling back to an untimed client");
+            reqwest::Client::new()
+        })
 }
 
 /// Upper bound on buffer capacity for SSE line parsing (2 MiB) to prevent memory exhaustion DoS.
