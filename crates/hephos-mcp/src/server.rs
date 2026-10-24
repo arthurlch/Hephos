@@ -99,6 +99,13 @@ impl McpServer {
     }
 
     /// Convert into a Tower service using rmcp's Streamable HTTP transport.
+    ///
+    /// **Security:** this service performs **no authentication** and imposes no body-size
+    /// or session bound of its own. Mounting it on a Hephos [`Router`]/`App` applies
+    /// the standard stack (request body limit, timeouts, rate limiting, panic isolation),
+    /// which bounds request size and abuse. If you serve this service **standalone** (not
+    /// behind the Hephos stack), add your own body-limit and timeout layers. For
+    /// authenticated access use [`Self::into_protected_router`].
     pub fn into_service(self) -> StreamableHttpService<McpServer, LocalSessionManager> {
         StreamableHttpService::new(
             move || Ok(self.clone()),
@@ -108,6 +115,11 @@ impl McpServer {
     }
 
     /// Mount as a Streamable HTTP endpoint on a Hephos [`Router`].
+    ///
+    /// **Unauthenticated:** anyone who can reach `prefix` can call every registered tool.
+    /// The surrounding Hephos stack still applies body limits, timeouts, and rate limiting,
+    /// but there is no identity check. Use [`Self::into_protected_router`] for any endpoint
+    /// exposed beyond localhost / a trusted network.
     pub fn into_router<S: Clone + Send + Sync + 'static>(self, prefix: &str) -> Router<S> {
         Router::new().nest_service(prefix, self.into_service())
     }

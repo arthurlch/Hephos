@@ -117,6 +117,12 @@ impl AuthService {
         }
     }
 
+    // NOTE (account enumeration): returning `409 conflict` on a duplicate email lets an
+    // unauthenticated caller probe which emails have accounts. This is an accepted
+    // trade-off for a self-service registration demo — the user needs to know the email
+    // is taken. It is mitigated by the per-IP rate limit wired in `main.rs`; the complete
+    // fix is an email-verification flow ("if this address is eligible, we've emailed you")
+    // that returns a uniform response, which this example does not implement.
     pub async fn register(&self, _ctx: &Ctx, input: Credentials) -> Result<User> {
         validate_password(&input.password)?;
         let hash = hash_password(&input.password)?;
