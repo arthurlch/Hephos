@@ -49,11 +49,15 @@ impl AuthService {
                 val
             }
             Err(_) => {
-                #[cfg(any(test, debug_assertions))]
+                // Fallback is gated to `#[cfg(test)]` ONLY — never `debug_assertions`.
+                // Staging/CI servers frequently run debug builds, so a debug fallback
+                // would let anyone forge admin JWTs against them. Non-test builds (debug
+                // or release) must supply a real JWT_SECRET.
+                #[cfg(test)]
                 {
                     "reference-app-default-secret-at-least-32-bytes".to_string()
                 }
-                #[cfg(not(any(test, debug_assertions)))]
+                #[cfg(not(test))]
                 {
                     return Err(Error::invalid(
                         "JWT_SECRET environment variable is required and must be at least 32 bytes",
