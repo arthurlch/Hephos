@@ -1,8 +1,11 @@
 //! Auth-flow tests.
 //!
-//! The flow tests need a live Postgres, wired migrations, and `JWT_SECRET`, so
-//! they are `#[ignore]` until migrations land — run with
-//! `DATABASE_URL=… JWT_SECRET=… cargo test -p example-auth -- --ignored`.
+//! The flow tests need a live Postgres, wired migrations, and `JWT_SECRET`, so they are
+//! `#[ignore]` to keep the offline `cargo test` green (this crate's compile-checked SQL
+//! can't even build without a database). They are NOT skipped in CI: the `db examples
+//! (postgres)` job runs `cargo test -p example-auth -- --include-ignored` against a live
+//! Postgres, so the full auth surface is exercised on every PR. Run locally with
+//! `DATABASE_URL=… JWT_SECRET=… cargo test -p example-auth -- --include-ignored`.
 
 use hephos::test::TestClient;
 use serde_json::{Value, json};

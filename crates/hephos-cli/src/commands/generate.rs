@@ -339,10 +339,18 @@ pub async fn create_one(ctx: Ctx, Json(input): Json<Create{type_name}>) -> Resul
             new_c = format!("{line}\n{new_c}");
             created_files.push(format!("src/api.rs (declared pub mod {plural})"));
         }
+        let already_merged = new_c.contains(&format!(".merge({plural}::routes())"));
         let merged_c = wire_api_routes(&new_c, &plural);
         if merged_c != new_c {
             new_c = merged_c;
             created_files.push(format!("src/api.rs (merged {plural}::routes())"));
+        } else if !already_merged {
+            // The merge call couldn't be spliced in (no `Router::new()` anchor in a
+            // non-canonical `routes()`). Don't fail silently — tell the user to wire it.
+            eprintln!(
+                "warning: could not auto-merge `{plural}::routes()` into src/api.rs \
+                 (no `Router::new()` found in `routes()`); add `.merge({plural}::routes())` manually"
+            );
         }
         fs::write(&api_mod, new_c)?;
     }
@@ -353,10 +361,22 @@ pub async fn create_one(ctx: Ctx, Json(input): Json<Create{type_name}>) -> Resul
         let content = fs::read_to_string(&state_file)?;
         let (new_c, updated) = wire_state_service(&content, &plural, &type_name);
         if updated {
+            // `wire_state_service` adds the AppState field even if it cannot find the
+            // `Ok(Self { .. })` constructor to instantiate the service. Detect that
+            // partial wiring and warn, rather than emitting code that won't compile.
+            let instantiated = new_c.contains(&format!("{plural}: {type_name}Service::new"));
             fs::write(&state_file, new_c)?;
-            created_files.push(format!(
-                "src/state.rs (registered {type_name}Service into AppState)"
-            ));
+            if instantiated {
+                created_files.push(format!(
+                    "src/state.rs (registered {type_name}Service into AppState)"
+                ));
+            } else {
+                eprintln!(
+                    "warning: added the `{plural}` field to AppState but could not find \
+                     `Ok(Self {{ .. }})` in src/state.rs to instantiate `{type_name}Service`; \
+                     add `{plural}: {type_name}Service::new(db.clone()),` to `AppState::init` manually"
+                );
+            }
         }
     }
 
