@@ -86,7 +86,9 @@ async fn jobs_enqueue_claim_complete_and_idempotency_roundtrip() {
     assert!(my_job.is_some(), "job should be claimed");
     let my_job = my_job.unwrap();
     assert_eq!(my_job.state, hephos_db::JobState::Running);
-    assert_eq!(my_job.attempts, 1);
+    // Claiming does NOT increment attempts (attempts counts handler failures, not
+    // deliveries), so a successful first delivery still shows 0.
+    assert_eq!(my_job.attempts, 0);
     assert_eq!(my_job.locked_by.as_deref(), Some("worker-test-1"));
 
     // 4. Complete job
@@ -130,7 +132,8 @@ async fn jobs_retry_backoff_and_dead_letter() {
         .into_iter()
         .find(|j| j.id == job.id)
         .expect("claimed");
-    assert_eq!(target.attempts, 1);
+    // Claim does not increment; this is the first delivery, 0 prior failures.
+    assert_eq!(target.attempts, 0);
 
     // Fail attempt 1 (not dead letter yet)
     jobs.fail(
@@ -161,7 +164,8 @@ async fn jobs_retry_backoff_and_dead_letter() {
         .into_iter()
         .find(|j| j.id == job.id)
         .expect("claimed 2");
-    assert_eq!(target2.attempts, 2);
+    // One prior failure (from attempt 1); claim added nothing.
+    assert_eq!(target2.attempts, 1);
 
     // Fail attempt 2 (exceeded max_attempts 2 -> dead letter)
     jobs.fail(target2.id, "fatal error", std::time::Duration::ZERO, true)
@@ -184,6 +188,55 @@ async fn jobs_retry_backoff_and_dead_letter() {
     assert_eq!(retried.state, hephos_db::JobState::Ready);
     assert_eq!(retried.attempts, 0);
     assert!(retried.last_error.is_none());
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres (DATABASE_URL)"]
+async fn jobs_crash_reclaim_does_not_burn_attempts() {
+    // Audit fix: a worker that claims a job and then crashes (never completes/fails)
+    // must not consume a retry when the job is reclaimed via the visibility timeout.
+    let db = hephos_db::Db::connect_from_env()
+        .await
+        .expect("DATABASE_URL must point at a reachable Postgres");
+    let jobs = db.jobs();
+    jobs.migrate().await.expect("migrate jobs table");
+
+    let job = jobs
+        .enqueue(
+            "crashy_task",
+            &serde_json::json!({ "n": 1 }),
+            hephos_db::JobOptions::new().max_attempts(3),
+        )
+        .await
+        .expect("enqueue");
+
+    let vis = std::time::Duration::from_secs(1);
+
+    // Delivery 1: claim, then simulate a crash (never complete/fail).
+    let claimed = jobs
+        .claim("worker-crash-1", 10, vis)
+        .await
+        .expect("claim 1");
+    let t1 = claimed
+        .into_iter()
+        .find(|j| j.id == job.id)
+        .expect("claimed 1");
+    assert_eq!(t1.attempts, 0);
+
+    // Wait past the visibility timeout so the orphan is reclaimable.
+    tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+
+    // Delivery 2: reclaim the orphaned job — attempts must still be 0.
+    let reclaimed = jobs
+        .claim("worker-crash-2", 10, vis)
+        .await
+        .expect("claim 2");
+    let t2 = reclaimed
+        .into_iter()
+        .find(|j| j.id == job.id)
+        .expect("reclaimed");
+    assert_eq!(t2.attempts, 0, "a crash/reclaim must not burn a retry");
+    assert_eq!(t2.locked_by.as_deref(), Some("worker-crash-2"));
 }
 
 #[tokio::test]

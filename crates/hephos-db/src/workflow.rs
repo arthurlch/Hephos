@@ -335,6 +335,13 @@ impl WorkflowStore for PostgresWorkflowStore {
                 CREATE INDEX IF NOT EXISTS idx_hephos_workflow_compensations_order
                     ON hephos_workflow_compensations (workflow_id, sequence_order DESC)
                 "#,
+                // Enforce one sequence number per workflow so a concurrent
+                // `register_compensation` race fails loudly instead of corrupting LIFO
+                // order. Idempotent: safe on fresh and existing databases.
+                r#"
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_hephos_workflow_compensations_seq
+                    ON hephos_workflow_compensations (workflow_id, sequence_order)
+                "#,
             ];
 
             for stmt in statements {
@@ -761,23 +768,23 @@ impl WorkflowStore for PostgresWorkflowStore {
                 Error::internal(format!("failed to serialize compensation payload: {e}"))
             })?;
 
-            let seq_query = r#"
-                SELECT COALESCE(MAX(sequence_order), 0) + 1 AS next_seq
-                FROM hephos_workflow_compensations
-                WHERE workflow_id = $1
-            "#;
-            let row = sqlx::query(seq_query)
-                .bind(id)
-                .fetch_one(self.db.pool())
-                .await
-                .map_err(into_internal)?;
-            let next_seq: i32 = row.try_get("next_seq").map_err(into_internal)?;
-
+            // Compute the sequence and insert in ONE statement so there is no
+            // read-then-write gap. A UNIQUE index on (workflow_id, sequence_order)
+            // (see `migrate`) turns any residual concurrent race into a hard error
+            // rather than silently duplicating a sequence number and corrupting LIFO
+            // order.
             let insert = r#"
                 INSERT INTO hephos_workflow_compensations (
                     id, workflow_id, step_name, compensation_name, payload, sequence_order, created_at
                 )
-                VALUES ($1, $2, $3, $4, $5::jsonb, $6, NOW())
+                VALUES (
+                    $1, $2, $3, $4, $5::jsonb,
+                    COALESCE(
+                        (SELECT MAX(sequence_order) FROM hephos_workflow_compensations WHERE workflow_id = $2),
+                        0
+                    ) + 1,
+                    NOW()
+                )
             "#;
             sqlx::query(insert)
                 .bind(comp_id)
@@ -785,7 +792,6 @@ impl WorkflowStore for PostgresWorkflowStore {
                 .bind(step_name)
                 .bind(compensation_name)
                 .bind(payload_str)
-                .bind(next_seq)
                 .execute(self.db.pool())
                 .await
                 .map_err(into_internal)?;
@@ -1221,8 +1227,23 @@ impl WorkflowContext {
 
     /// Execute a checkpointed step.
     ///
-    /// If this step has already completed in a prior execution of this workflow,
-    /// its memoized output is deserialized and returned immediately without invoking `f`.
+    /// # Delivery semantics (at-least-once, idempotency required)
+    ///
+    /// A step that has **completed** in a prior execution is memoized: its output is
+    /// returned immediately without invoking `f`. Any other prior state — never started,
+    /// interrupted mid-execution (`running`), or previously `failed` — causes `f` to run
+    /// (again). Because the side effect runs *before* the completion checkpoint commits,
+    /// a crash in that window re-executes the effect on resume. **Step bodies must
+    /// therefore be idempotent** (use an idempotency key, upsert, or a conditional
+    /// write). This is at-least-once with exactly-once *memoization of completed steps* —
+    /// not atomic exactly-once. True exactly-once would require the effect and the
+    /// checkpoint to commit in a single transaction, which this closure-based API cannot
+    /// do for arbitrary external effects.
+    ///
+    /// A write-ahead `running` marker is persisted *before* `f` runs, so an interrupted
+    /// step leaves a detectable record (surfaced via a warning on resume) rather than
+    /// vanishing. A previously `failed` step is retried on resume rather than permanently
+    /// poisoning the workflow.
     pub async fn step<T, F, Fut>(&mut self, step_name: &str, f: F) -> Result<T>
     where
         T: Serialize + DeserializeOwned,
@@ -1242,25 +1263,44 @@ impl WorkflowContext {
             return Err(Error::internal("workflow execution cancelled"));
         }
 
-        // 1. Check for prior checkpoint
+        // 1. Memoized completion is the ONLY short-circuit. `running`/`failed`/absent all
+        //    fall through to (re-)execution — see the delivery-semantics doc above.
         if let Some(step) = self.store.get_step(self.id, step_name).await? {
-            if step.state == "completed" {
-                if let Some(output) = step.output {
-                    return serde_json::from_value(output).map_err(|e| {
-                        Error::internal(format!(
-                            "failed to deserialize step {step_name} checkpoint: {e}"
-                        ))
-                    });
+            match step.state.as_str() {
+                "completed" => {
+                    if let Some(output) = step.output {
+                        return serde_json::from_value(output).map_err(|e| {
+                            Error::internal(format!(
+                                "failed to deserialize step {step_name} checkpoint: {e}"
+                            ))
+                        });
+                    }
                 }
-            } else if step.state == "failed" {
-                return Err(Error::internal(format!(
-                    "step {step_name} previously failed: {}",
-                    step.error.unwrap_or_default()
-                )));
+                "running" => {
+                    tracing::warn!(
+                        workflow_id = %self.id,
+                        step = %step_name,
+                        "resuming a step interrupted mid-execution; re-executing (side effect must be idempotent)"
+                    );
+                }
+                "failed" => {
+                    tracing::warn!(
+                        workflow_id = %self.id,
+                        step = %step_name,
+                        "retrying a previously failed step on resume"
+                    );
+                }
+                _ => {}
             }
         }
 
-        // 2. Execute step
+        // 2. Write-ahead intent marker: persist `running` BEFORE the side effect so a
+        //    crash leaves a detectable in-flight record instead of silent nothing.
+        self.store
+            .save_step(self.id, step_name, "running", None, None)
+            .await?;
+
+        // 3. Execute the step and record the terminal state.
         match f().await {
             Ok(result) => {
                 let json = serde_json::to_value(&result).map_err(|e| {
@@ -1325,6 +1365,16 @@ impl WorkflowContext {
     }
 
     /// Execute all pending registered compensations in reverse order (LIFO).
+    ///
+    /// Rollback is **best-effort**: a compensator that fails does NOT abort the remaining
+    /// compensations (that would leave earlier side effects un-rolled-back and wedge the
+    /// saga in `Compensating` forever). Every pending compensation is attempted; each
+    /// success is marked executed. If all succeed the workflow ends `Compensated`; if any
+    /// fail it ends `Failed` with the collected errors, never stuck mid-rollback.
+    ///
+    /// Compensations are themselves at-least-once (the executed marker is written after
+    /// the compensator runs), so **compensators must be idempotent** — a crash between
+    /// running and marking re-runs that compensation on resume.
     pub async fn compensate<F, Fut>(&mut self, mut compensator: F) -> Result<()>
     where
         F: FnMut(WorkflowCompensationRecord) -> Fut,
@@ -1339,19 +1389,45 @@ impl WorkflowContext {
             .update_workflow_state(self.id, WorkflowState::Compensating, None, None)
             .await?;
 
+        let mut failures: Vec<String> = Vec::new();
         for comp in pending {
             let comp_id = comp.id;
-            compensator(comp).await?;
-            self.store
-                .mark_compensation_executed(self.id, comp_id)
-                .await?;
+            let comp_name = comp.compensation_name.clone();
+            match compensator(comp).await {
+                Ok(()) => {
+                    if let Err(e) = self
+                        .store
+                        .mark_compensation_executed(self.id, comp_id)
+                        .await
+                    {
+                        // The compensation ran but we could not record it; on resume it
+                        // will run again (hence the idempotency requirement). Surface it.
+                        failures.push(format!(
+                            "compensation '{comp_name}' executed but could not be marked: {e}"
+                        ));
+                    }
+                }
+                Err(e) => {
+                    // Record and continue — do NOT abort the remaining rollback.
+                    failures.push(format!("compensation '{comp_name}' failed: {e}"));
+                }
+            }
         }
 
-        self.store
-            .update_workflow_state(self.id, WorkflowState::Compensated, None, None)
-            .await?;
-
-        Ok(())
+        if failures.is_empty() {
+            self.store
+                .update_workflow_state(self.id, WorkflowState::Compensated, None, None)
+                .await?;
+            Ok(())
+        } else {
+            let msg = format!("compensation incomplete: {}", failures.join("; "));
+            // Terminal state so the saga is never stuck in `Compensating`.
+            let _ = self
+                .store
+                .update_workflow_state(self.id, WorkflowState::Failed, None, Some(msg.clone()))
+                .await;
+            Err(Error::internal(msg))
+        }
     }
 
     /// Block on a human-in-the-loop approval step until decided or timed out.
@@ -1778,5 +1854,109 @@ mod tests {
 
         let record = workflows.get(flow.workflow_id()).await.unwrap().unwrap();
         assert_eq!(record.state, WorkflowState::Compensated);
+    }
+
+    #[tokio::test]
+    async fn failed_step_is_retried_on_resume_not_poisoned() {
+        // Audit fix: a step that failed once must be RE-RUN on resume, not permanently
+        // poison the workflow.
+        let workflows = Workflows::in_memory();
+        let attempts = Arc::new(AtomicUsize::new(0));
+
+        let wf_id = {
+            let mut flow = workflows.start("retry_flow", &()).await.unwrap();
+            let id = flow.workflow_id();
+            let a = attempts.clone();
+            let res: Result<i32> = flow
+                .step("maybe", || async move {
+                    a.fetch_add(1, Ordering::SeqCst);
+                    Err(Error::internal("transient failure"))
+                })
+                .await;
+            assert!(res.is_err());
+            assert_eq!(attempts.load(Ordering::SeqCst), 1);
+            id
+        };
+
+        // Resume: the previously-failed step re-executes and now succeeds.
+        let mut flow = workflows.resume(wf_id).await.unwrap();
+        let a = attempts.clone();
+        let out: i32 = flow
+            .step("maybe", || async move {
+                a.fetch_add(1, Ordering::SeqCst);
+                Ok(7)
+            })
+            .await
+            .unwrap();
+        assert_eq!(out, 7);
+        assert_eq!(
+            attempts.load(Ordering::SeqCst),
+            2,
+            "step must re-run on resume"
+        );
+        flow.complete(&out).await.unwrap();
+
+        let rec = workflows.get(wf_id).await.unwrap().unwrap();
+        assert_eq!(rec.state, WorkflowState::Completed);
+    }
+
+    #[tokio::test]
+    async fn compensation_continues_when_one_compensator_fails() {
+        // Audit fix: a failing compensator must NOT abort the rollback or wedge the saga
+        // in `Compensating`. All compensations are attempted (LIFO); the saga ends in a
+        // terminal state; the failed compensation stays pending for a later retry.
+        let workflows = Workflows::in_memory();
+        let mut flow = workflows.start("saga_fail", &()).await.unwrap();
+        flow.register_compensation("step1", "undo_a", &"a")
+            .await
+            .unwrap();
+        flow.register_compensation("step2", "undo_b", &"b")
+            .await
+            .unwrap();
+        flow.register_compensation("step3", "undo_c", &"c")
+            .await
+            .unwrap();
+
+        let seen = Arc::new(RwLock::new(Vec::new()));
+        let seen2 = seen.clone();
+        let res = flow
+            .compensate(|comp| {
+                let seen = seen2.clone();
+                async move {
+                    seen.write().await.push(comp.compensation_name.clone());
+                    if comp.compensation_name == "undo_b" {
+                        return Err(Error::internal("compensator failed"));
+                    }
+                    Ok(())
+                }
+            })
+            .await;
+
+        assert!(
+            res.is_err(),
+            "compensate reports failure when a compensator fails"
+        );
+        // All three attempted in LIFO order despite the middle failure.
+        assert_eq!(
+            *seen.read().await,
+            vec![
+                "undo_c".to_string(),
+                "undo_b".to_string(),
+                "undo_a".to_string()
+            ]
+        );
+        // Terminal state — never stuck in `Compensating`.
+        let rec = workflows.get(flow.workflow_id()).await.unwrap().unwrap();
+        assert_eq!(rec.state, WorkflowState::Failed);
+        // The two that succeeded are marked executed; the failed one remains pending.
+        let pending: Vec<String> = workflows
+            .compensations(flow.workflow_id())
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|c| c.executed_at.is_none())
+            .map(|c| c.compensation_name)
+            .collect();
+        assert_eq!(pending, vec!["undo_b".to_string()]);
     }
 }
