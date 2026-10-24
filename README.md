@@ -151,7 +151,7 @@ Hephos is tagged **v1.0.0** with SemVer 2.0 stability commitments on its public 
 
 - **HTTP & stack:** request-id tracking, tracing context, per-route & global timeouts, body limits, baseline security headers, GCRA rate limiting, load shedding, connection caps, graceful draining.
 - **Database:** Postgres pooling, embedded migrations, transactional outbox, durable job queues with retry/backoff, durable saga workflows with automated compensation.
-- **Security & identity:** Argon2id hashing, rotating JWT access/refresh tokens, revocable API keys, IDOR owner guards, secrets redaction, append-only audit logging.
+- **Security & identity:** Argon2id hashing, rotating JWT access/refresh tokens, revocable API keys, IDOR owner guards, `Secret<T>` redaction + zeroize-on-drop, and audit-logging hooks.
 - **Agents & MCP:** `schemars`-derived tool definitions, Anthropic/OpenAI providers, streaming, durable agent execution, MCP server & client.
 - **Tooling:** canonical layout, CI architecture enforcement (`hephos check`), environment diagnostics (`hephos doctor`), and code generators.
 

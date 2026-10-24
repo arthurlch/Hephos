@@ -3,17 +3,23 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use zeroize::Zeroize;
 
 use crate::error::{Error, Result};
 
-/// A protected wrapper for sensitive values (API keys, tokens, credentials)
-/// that redacts them from debug and display outputs and avoids accidental log leakage.
+/// A protected wrapper for sensitive values (API keys, tokens, credentials) that redacts
+/// them from debug/display/serde output and **zeroizes the underlying memory on drop**,
+/// so a plaintext secret does not linger in freed heap, swap, or a core dump.
+///
+/// The wrapped type must implement [`Zeroize`] (all the standard secret carriers —
+/// `String`, `Vec<u8>`, `[u8; N]` — do). This bound was added in a security hardening
+/// pass; in practice `Secret` is only ever used as [`SecretString`].
 #[derive(Clone, PartialEq, Eq)]
-pub struct Secret<T> {
+pub struct Secret<T: Zeroize> {
     inner: T,
 }
 
-impl<T> Secret<T> {
+impl<T: Zeroize> Secret<T> {
     /// Wrap a sensitive value.
     pub fn new(inner: T) -> Self {
         Secret { inner }
@@ -24,9 +30,21 @@ impl<T> Secret<T> {
         &self.inner
     }
 
-    /// Consume the wrapper and return the underlying secret value.
-    pub fn into_inner(self) -> T {
-        self.inner
+    /// Consume the wrapper and return the underlying secret value. The returned value is
+    /// handed to the caller un-zeroized (they now own it); the emptied wrapper is zeroized
+    /// on drop as usual. Requires `T: Default` to move the value out without `unsafe`.
+    pub fn into_inner(mut self) -> T
+    where
+        T: Default,
+    {
+        std::mem::take(&mut self.inner)
+    }
+}
+
+/// Zeroize the secret's memory when the wrapper is dropped.
+impl<T: Zeroize> Drop for Secret<T> {
+    fn drop(&mut self) {
+        self.inner.zeroize();
     }
 }
 
@@ -45,19 +63,19 @@ impl From<&str> for SecretString {
     }
 }
 
-impl<T> fmt::Debug for Secret<T> {
+impl<T: Zeroize> fmt::Debug for Secret<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "[REDACTED]")
     }
 }
 
-impl<T> fmt::Display for Secret<T> {
+impl<T: Zeroize> fmt::Display for Secret<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "[REDACTED]")
     }
 }
 
-impl<'de, T: Deserialize<'de>> Deserialize<'de> for Secret<T> {
+impl<'de, T: Deserialize<'de> + Zeroize> Deserialize<'de> for Secret<T> {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -66,7 +84,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Secret<T> {
     }
 }
 
-impl<T> Serialize for Secret<T> {
+impl<T: Zeroize> Serialize for Secret<T> {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -201,6 +219,13 @@ mod tests {
         assert_eq!(format!("{secret:?}"), "[REDACTED]");
         assert_eq!(format!("{secret}"), "[REDACTED]");
         assert_eq!(secret.expose_secret(), "super-secret-password");
+    }
+
+    #[test]
+    fn into_inner_hands_off_the_value() {
+        let secret = SecretString::from("token-abc");
+        // The wrapper zeroizes on drop; into_inner moves the live value out to the caller.
+        assert_eq!(secret.into_inner(), "token-abc");
     }
 
     #[test]

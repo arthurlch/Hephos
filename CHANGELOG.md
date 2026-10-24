@@ -3,6 +3,34 @@
 All notable changes to Hephos are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer.
 
+## [Unreleased]
+
+Post-1.0 security & correctness hardening from an internal audit (landed as
+`fix/*` PRs). Highlights:
+
+### Security
+- Rate limiter now keys on the unspoofable peer IP by default; forwarded-header trust
+  is opt-in via `HEPHOS_RATE_LIMIT_TRUST_PROXY` (previously trusted `X-Forwarded-For`
+  unconditionally, allowing trivial per-request limiter bypass).
+- `Secret<T>` now **zeroizes its memory on drop** (via `zeroize`) in addition to
+  redacting output. **SemVer note:** this adds a `T: Zeroize` bound to `Secret<T>`; it is
+  a technically-breaking change to a generic 1.0 type, but `Secret` is only ever used as
+  `SecretString` (`Secret<String>`), so real-world impact is nil.
+- Auth example wires per-IP rate limiting; MCP `into_router`/`into_service` documented as
+  unauthenticated (use `into_protected_router` in production); reference-app requires a
+  real `JWT_SECRET` in non-test builds (no debug fallback).
+
+### Fixed
+- Durable workflows: write-ahead step checkpointing, failed steps retry on resume
+  (no longer poison the workflow), best-effort LIFO compensation (a failing compensator
+  no longer wedges the saga), atomic compensation sequencing. Semantics documented as
+  at-least-once with exactly-once memoization of completed steps (idempotency required).
+- Job queue: `attempts` counts handler failures, not deliveries, so a worker crash no
+  longer burns a retry and prematurely dead-letters.
+- Agent: real token streaming on the final turn (no more space-split faking); transient
+  provider errors retried with backoff; `Limits::max_tokens` documented as a per-response
+  cap, not a cumulative budget.
+
 ## [1.0.0] - 2026-10-20
 
 ### Added

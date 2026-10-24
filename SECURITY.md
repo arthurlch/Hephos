@@ -22,8 +22,9 @@ dynamically guaranteed:
    Database schema details, connection strings, or system paths are never leaked to callers.
 5. **Compile-Checked SQL**: All SQL statements use `sqlx::query!` or `sqlx::query_as!` ensuring parameters
    are bound and types match the database schema. String concatenation in SQL queries is forbidden.
-6. **Secrets Redaction**: All credentials (API keys, tokens, passwords) are wrapped in `Secret<T>` / `SecretString`,
-   redacting them from `Debug`, `Display`, and serialization output.
+6. **Secrets Redaction & Zeroization**: All credentials (API keys, tokens, passwords) are wrapped in `Secret<T>` /
+   `SecretString`, redacting them from `Debug`, `Display`, and serialization output, and **zeroizing the underlying
+   memory on drop** (via `zeroize`) so plaintext does not linger in freed heap, swap, or a core dump.
 7. **Identity Attribution & Audit Trail**: Security-sensitive actions record an `AuditEvent` with actor identity,
    action name, resource ID, outcome, and timestamp.
 8. **Strict Input & Path Validation in Tooling**: Scaffolding and code generation in `hephos-cli` strictly

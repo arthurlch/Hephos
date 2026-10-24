@@ -22,6 +22,12 @@ async fn main() -> Result<()> {
             let db = db.clone();
             async move { db.ping().await }
         })
+        // Per-IP rate limiting bounds credential-stuffing / brute-force against the auth
+        // endpoints (keyed on the unspoofable peer IP by default). This example applies a
+        // single global limit for simplicity; a production app would apply a tighter
+        // sensitive limit (e.g. RateLimitConfig::sensitive) specifically to /auth/login
+        // and /auth/refresh via a per-route layer.
+        .rate_limit(50, 100)
         .routes(api::routes(auth))
         .task(TokenReaper::new(
             std::time::Duration::from_secs(3600),
