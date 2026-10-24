@@ -329,14 +329,24 @@ async fn observe(mut req: Request, next: Next, hsts: bool) -> Response {
     let request_id = Uuid::new_v4();
     req.extensions_mut().insert(RequestId(request_id));
     req.extensions_mut().insert(Identity::Anonymous);
-    if req.extensions().get::<SocketAddr>().is_none()
-        && req
-            .extensions()
-            .get::<axum::extract::ConnectInfo<SocketAddr>>()
-            .is_none()
+    // Ensure a peer address is always available for IP-keyed rate limiting. Production
+    // serves via `into_make_service_with_connect_info`, so `ConnectInfo<SocketAddr>` is
+    // present with the real peer; the in-memory `TestClient` has neither, so synthesize
+    // a loopback peer. We insert `ConnectInfo` (not just a bare `SocketAddr`) because
+    // the default `PeerIpKeyExtractor` reads `ConnectInfo<SocketAddr>`.
+    if req
+        .extensions()
+        .get::<axum::extract::ConnectInfo<SocketAddr>>()
+        .is_none()
     {
+        let peer = req
+            .extensions()
+            .get::<SocketAddr>()
+            .copied()
+            .unwrap_or_else(|| SocketAddr::from(([127, 0, 0, 1], 0)));
+        req.extensions_mut().insert(peer);
         req.extensions_mut()
-            .insert(SocketAddr::from(([127, 0, 0, 1], 0)));
+            .insert(axum::extract::ConnectInfo(peer));
     }
 
     let method = req.method().clone();
