@@ -55,7 +55,7 @@ lint or proven by a test — not a claim in a doc.
 | **Failures are dense and machine-readable** | A closed `Error` algebra; every fault becomes `{"error":{"kind","message"}}` with a stable `kind` | Variant → HTTP status is total and tested; internals are logged in full but returned opaque |
 | **Context extraction can never fail** | `Ctx<S>` with `type Rejection = Infallible`; the standard stack always injects request-id, identity, and a cancel token | Every handler starts `ctx: Ctx` — no extractor-ordering class of compile errors to debug |
 | **Write a capability once, serve it twice** | One `#[derive]`-schema'd `Tool` trait | The same tool is reachable by the in-process agent loop **and** an external MCP server from one definition |
-| **Never duplicate a side effect** | Write-ahead turn checkpointing + LIFO saga compensation | A canary test resumes an interrupted agent from its checkpoint and asserts the side-effecting tool is **not** re-run |
+| **Don't re-run completed work on resume** | Write-ahead `running`→`completed` checkpointing + best-effort LIFO saga compensation (at-least-once; steps must be idempotent) | Canary tests resume an interrupted agent/workflow and assert completed steps are memoized, failed steps retry (not poison), and a failing compensator doesn't wedge the saga |
 | **The wiring is tested, not hoped** | `hephos::test::TestClient` drives the *real* router in-memory | A mandatory `routes_build` canary catches route-composition panics (e.g. nesting at `/`) before they reach startup |
 
 The quantified trade-offs of these choices — where structured errors *lose* to backtraces

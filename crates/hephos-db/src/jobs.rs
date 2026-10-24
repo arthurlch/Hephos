@@ -75,9 +75,13 @@ pub struct Job {
     pub payload: serde_json::Value,
     /// Current execution state.
     pub state: JobState,
-    /// Number of attempts made so far.
+    /// Number of genuine handler failures so far (incremented on failure, NOT on each
+    /// delivery). A worker crash/reclaim does not count, so transient crashes do not
+    /// burn the retry budget. Trade-off: a handler that crashes the worker process every
+    /// time is redelivered without ever incrementing — bound such poison with a worker
+    /// supervisor or a visibility-timeout tuned to surface it.
     pub attempts: i32,
-    /// Maximum allowed attempts before sending to dead-letter queue.
+    /// Maximum handler failures before the job is moved to the dead-letter queue.
     pub max_attempts: i32,
     /// Timestamp when this job is eligible to run.
     pub run_at: OffsetDateTime,
@@ -398,11 +402,13 @@ impl Jobs {
                 LIMIT $3
                 FOR UPDATE SKIP LOCKED
             )
+            -- NOTE: `attempts` is NOT incremented here. It counts genuine handler
+            -- failures (incremented in `fail`), not deliveries, so a worker that crashes
+            -- after claiming does not burn a retry and cause premature dead-lettering.
             UPDATE hephos_jobs j
             SET state = 'running',
                 locked_at = $1,
                 locked_by = $4,
-                attempts = j.attempts + 1,
                 updated_at = $1
             FROM available
             WHERE j.id = available.id
@@ -481,9 +487,12 @@ impl Jobs {
         is_dead_letter: bool,
     ) -> Result<()> {
         if is_dead_letter {
+            // Count this terminal failure too, so a dead-lettered job's `attempts`
+            // reflects the true number of handler failures.
             let query = r#"
                 UPDATE hephos_jobs
                 SET state = 'dead_letter',
+                    attempts = attempts + 1,
                     last_error = $2,
                     locked_at = NULL,
                     locked_by = NULL,
@@ -499,9 +508,11 @@ impl Jobs {
         } else {
             let retry_at = OffsetDateTime::now_utc()
                 + time::Duration::milliseconds(backoff.as_millis().max(1) as i64);
+            // Increment on each real failure — this is what bounds retries.
             let query = r#"
                 UPDATE hephos_jobs
                 SET state = 'ready',
+                    attempts = attempts + 1,
                     run_at = $2,
                     last_error = $3,
                     locked_at = NULL,
@@ -789,7 +800,10 @@ impl<S: Clone + Send + Sync + 'static> JobWorker<S> {
                 }
                 Err(err) => {
                     let err_msg = err.to_string();
-                    let is_dead = job.attempts >= job.max_attempts;
+                    // `job.attempts` is the count of PRIOR handler failures (claim no
+                    // longer increments). This failure is the (attempts + 1)th, so
+                    // dead-letter once it reaches the cap.
+                    let is_dead = job.attempts + 1 >= job.max_attempts;
                     let backoff = self.calculate_backoff(job.attempts);
 
                     if is_dead {
