@@ -260,7 +260,11 @@ async fn max_tool_calls_per_turn_cap_enforced() {
 
 #[tokio::test]
 async fn tool_using_agent_streams_final_turn() {
+    // Detect-then-stream: the tool turn uses complete(); the next complete() returns no
+    // tools (the agent detects the final turn) and is re-issued via stream(). SequenceModel
+    // draws complete() and stream() from one queue, so three entries are consumed in order.
     let model = SequenceModel::new(vec![
+        // turn 0 (complete): request a tool
         Message::assistant_with_tools(
             "thinking",
             vec![ToolCall::with_id(
@@ -269,6 +273,9 @@ async fn tool_using_agent_streams_final_turn() {
                 serde_json::json!({ "query": "rust" }),
             )],
         ),
+        // turn 1 (complete): no tools -> triggers the final streamed turn
+        Message::assistant("deciding to answer"),
+        // the re-issued final turn (stream): the actually-streamed answer
         Message::assistant("final answer stream"),
     ]);
 
@@ -343,6 +350,8 @@ async fn tool_using_agent_streams_after_recovering_from_tool_error() {
         }
     }
 
+    // turn 0 fails the tool; turn 1's complete() returns no tools (recovered) and is
+    // re-issued via stream() for the real streamed final answer (three queue entries).
     let model = SequenceModel::new(vec![
         Message::assistant_with_tools(
             "trying tool",
@@ -352,6 +361,9 @@ async fn tool_using_agent_streams_after_recovering_from_tool_error() {
                 serde_json::json!({}),
             )],
         ),
+        // complete() after the tool error: no tools -> triggers the final streamed turn
+        Message::assistant("deciding to answer after tool error"),
+        // the re-issued final turn (stream)
         Message::assistant("recovered stream output"),
     ]);
 
@@ -362,4 +374,63 @@ async fn tool_using_agent_streams_after_recovering_from_tool_error() {
         text.push_str(&chunk.unwrap());
     }
     assert_eq!(text, "recovered stream output");
+}
+
+#[tokio::test]
+async fn model_transient_errors_are_retried_then_succeed() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct FlakyModel {
+        calls: AtomicUsize,
+    }
+    impl Model for FlakyModel {
+        async fn complete(&self, _request: Completion) -> Result<Message> {
+            // Fail the first two attempts with retryable errors, then succeed.
+            let n = self.calls.fetch_add(1, Ordering::SeqCst);
+            if n == 0 {
+                Err(hephos_core::Error::unavailable("upstream blip"))
+            } else if n == 1 {
+                Err(hephos_core::Error::rate_limited("slow down"))
+            } else {
+                Ok(Message::assistant("recovered"))
+            }
+        }
+        async fn stream(&self, _request: Completion) -> Result<TextStream> {
+            Ok(Box::pin(futures::stream::iter(vec![Ok("x".to_string())])))
+        }
+    }
+
+    let agent = Agent::new(FlakyModel {
+        calls: AtomicUsize::new(0),
+    });
+    // Two transient failures are retried (backoff), the third attempt succeeds.
+    assert_eq!(agent.run("hi").await.unwrap(), "recovered");
+}
+
+#[tokio::test]
+async fn model_non_retryable_errors_fail_fast() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct AlwaysInvalidModel {
+        calls: Arc<AtomicUsize>,
+    }
+    impl Model for AlwaysInvalidModel {
+        async fn complete(&self, _request: Completion) -> Result<Message> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Err(hephos_core::Error::invalid("bad request"))
+        }
+        async fn stream(&self, _request: Completion) -> Result<TextStream> {
+            Ok(Box::pin(
+                futures::stream::iter(Vec::<Result<String>>::new()),
+            ))
+        }
+    }
+
+    let calls = Arc::new(AtomicUsize::new(0));
+    let agent = Agent::new(AlwaysInvalidModel {
+        calls: calls.clone(),
+    });
+    assert!(agent.run("hi").await.is_err());
+    // A non-retryable error must NOT be retried.
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
 }

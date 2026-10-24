@@ -55,14 +55,22 @@ impl AgentCheckpoint for InMemoryAgentCheckpoint {
 
 /// Bounds on a single agent run. There is no unbounded agent loop in Hephos.
 ///
-/// Every run is constrained by a maximum number of model turns, a token ceiling,
-/// a wall-clock timeout, and a per-turn tool-call fan-out cap. Hitting any bound
-/// ends the run with an error, never silently.
+/// Every run is constrained by a maximum number of model turns, a wall-clock timeout,
+/// and a per-turn tool-call fan-out cap. Hitting `max_turns` or `timeout` ends the run
+/// with an error, never silently.
 #[derive(Debug, Clone)]
 pub struct Limits {
+    /// Maximum model turns before the run ends with an error.
     pub max_turns: u32,
+    /// The **per-response output cap** sent to the provider on each turn (the API's
+    /// `max_tokens`). This is NOT a cumulative run-wide budget: a run can emit up to
+    /// `max_turns × max_tokens` output tokens, and input tokens are not counted here. A
+    /// hard cumulative token budget would require per-call usage accounting the `Model`
+    /// trait does not yet report; the run-wide bound today is `max_turns` plus `timeout`.
     pub max_tokens: u32,
+    /// Wall-clock ceiling for the entire run (including tool dispatch and retries).
     pub timeout: Duration,
+    /// Maximum tool calls accepted in a single turn (fan-out cap).
     pub max_tool_calls_per_turn: usize,
 }
 
@@ -230,7 +238,7 @@ impl<M: Model> Agent<M> {
                 max_tokens: self.limits.max_tokens,
                 response_schema: None,
             };
-            self.model.stream(completion).await
+            self.stream_retrying(completion).await
         } else {
             let mut messages = vec![Message::user(input)];
             let tool_schemas = self.tool_schemas();
@@ -244,8 +252,7 @@ impl<M: Model> Agent<M> {
                     response_schema: None,
                 };
                 let reply = self
-                    .model
-                    .complete(completion)
+                    .complete_retrying(completion)
                     .instrument(turn_span.clone())
                     .await?;
                 match parse_tool_calls(&reply) {
@@ -262,12 +269,24 @@ impl<M: Model> Agent<M> {
                         messages.extend(tool_messages);
                     }
                     _ => {
-                        let parts: Vec<Result<String>> = reply
-                            .content
-                            .split_inclusive(' ')
-                            .map(|s| Ok(s.to_string()))
-                            .collect();
-                        return Ok(Box::pin(futures::stream::iter(parts)));
+                        // Final turn: the model wants no (more) tools. Re-issue the
+                        // conversation via `stream()` so the final answer is genuinely
+                        // token-streamed and dropping the returned stream cancels
+                        // generation — rather than materializing the whole reply and
+                        // faking chunks by splitting on spaces. Tools are omitted from
+                        // this request so the model must produce the textual answer the
+                        // previous `complete()` already indicated it would. Cost: one
+                        // extra model round-trip for the final turn of a tool-using
+                        // agent (tool-dispatch turns must use `complete()` because the
+                        // text stream cannot carry tool calls).
+                        let final_completion = Completion {
+                            system: self.system.clone(),
+                            messages,
+                            tools: Vec::new(),
+                            max_tokens: self.limits.max_tokens,
+                            response_schema: None,
+                        };
+                        return self.stream_retrying(final_completion).await;
                     }
                 }
             }
@@ -280,6 +299,64 @@ impl<M: Model> Agent<M> {
 
     fn tool_schemas(&self) -> Vec<ToolSchema> {
         self.tools.schemas()
+    }
+
+    /// Max transient-error retries per model round-trip.
+    const MODEL_MAX_RETRIES: u32 = 3;
+
+    /// Transient model failures worth retrying (provider rate limits, temporary
+    /// unavailability, upstream timeouts). Deterministic errors are returned as-is.
+    fn is_retryable(err: &Error) -> bool {
+        matches!(err.kind(), "rate_limited" | "unavailable" | "timeout")
+    }
+
+    /// `model.complete` with exponential backoff on transient errors. The agent's
+    /// overall `timeout` (enforced by `drive`/`stream`) bounds total elapsed time, so
+    /// retries can never run unboundedly. This is where retries live — the `Model`
+    /// trait stays a thin, retry-free HTTP client by design.
+    async fn complete_retrying(&self, completion: Completion) -> Result<Message> {
+        let mut attempt = 0u32;
+        loop {
+            match self.model.complete(completion.clone()).await {
+                Ok(msg) => return Ok(msg),
+                Err(err) if Self::is_retryable(&err) && attempt < Self::MODEL_MAX_RETRIES => {
+                    let backoff = Duration::from_millis(200u64 * 2u64.pow(attempt));
+                    tracing::warn!(
+                        attempt = attempt + 1,
+                        kind = err.kind(),
+                        backoff_ms = backoff.as_millis() as u64,
+                        "retrying model.complete after transient error"
+                    );
+                    tokio::time::sleep(backoff).await;
+                    attempt += 1;
+                }
+                Err(err) => return Err(err),
+            }
+        }
+    }
+
+    /// `model.stream` with the same transient-error backoff on *establishing* the
+    /// stream. Errors surfaced mid-stream (after the first byte) are not retried, since
+    /// partial output may already have been consumed.
+    async fn stream_retrying(&self, completion: Completion) -> Result<TextStream> {
+        let mut attempt = 0u32;
+        loop {
+            match self.model.stream(completion.clone()).await {
+                Ok(stream) => return Ok(stream),
+                Err(err) if Self::is_retryable(&err) && attempt < Self::MODEL_MAX_RETRIES => {
+                    let backoff = Duration::from_millis(200u64 * 2u64.pow(attempt));
+                    tracing::warn!(
+                        attempt = attempt + 1,
+                        kind = err.kind(),
+                        backoff_ms = backoff.as_millis() as u64,
+                        "retrying model.stream after transient error"
+                    );
+                    tokio::time::sleep(backoff).await;
+                    attempt += 1;
+                }
+                Err(err) => return Err(err),
+            }
+        }
     }
 
     /// The shared turn loop, bounded by every `Limits` dimension: it enforces the
@@ -334,8 +411,7 @@ impl<M: Model> Agent<M> {
                 response_schema: response_schema.clone(),
             };
             let reply = self
-                .model
-                .complete(completion)
+                .complete_retrying(completion)
                 .instrument(turn_span.clone())
                 .await?;
 
@@ -433,8 +509,7 @@ impl<M: Model> Agent<M> {
                 response_schema: response_schema.clone(),
             };
             let reply = self
-                .model
-                .complete(completion)
+                .complete_retrying(completion)
                 .instrument(turn_span.clone())
                 .await?;
 

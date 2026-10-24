@@ -133,10 +133,22 @@ impl ToolResult {
 /// building a [`crate::Completion`].
 pub fn schema_for<T: Tool>() -> ToolSchema {
     let schema = schemars::schema_for!(T::Input);
+    // `schemars` output serializes to JSON in all practical cases. On the theoretical
+    // failure path, fall back to a permissive object schema and log loudly — NOT a
+    // silent `Value::Null`, which the model would receive as an invalid/empty schema and
+    // then call the tool blind.
+    let input_schema = serde_json::to_value(schema).unwrap_or_else(|e| {
+        tracing::error!(
+            tool = T::NAME,
+            error = %e,
+            "failed to serialize tool input schema; falling back to permissive object schema"
+        );
+        serde_json::json!({ "type": "object" })
+    });
     ToolSchema {
         name: T::NAME.to_string(),
         description: T::DESCRIPTION.to_string(),
-        input_schema: serde_json::to_value(schema).unwrap_or_default(),
+        input_schema,
     }
 }
 
